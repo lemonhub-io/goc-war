@@ -1,0 +1,13 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "goc-war",
+  "compatibility_date": "2025-10-21",
+  "workers_dev": false,
+  "routes": [
+    { "pattern": "goc.openhub.today", "custom_domain": true }
+  ],
+  "assets": {
+    "directory": "./dist",
+    "not_found_handling": "single-page-application"
+  }
+}
