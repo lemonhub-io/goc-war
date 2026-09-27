@@ -3,7 +3,7 @@
 // `lite` tier: weaker bloom, no chromatic aberration — roughly halves the
 // per-pixel post cost on weak GPUs while keeping the signature glow.
 import * as THREE from 'three/webgpu';
-import { Fn, vec3, vec4, pass, screenUV, hash, smoothstep, sin } from 'three/tsl';
+import { Fn, vec2, vec3, vec4, pass, screenUV, hash, smoothstep, sin } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { chromaticAberration } from 'three/addons/tsl/display/ChromaticAberrationNode.js';
 import { U } from './shared';
@@ -16,7 +16,7 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
   const bloomed = sceneColor.add(bloom(sceneColor as any, lite ? 0.55 : 0.85, 0.62, 0.02) as any);
   const c: any = lite
     ? bloomed
-    : chromaticAberration(bloomed as any, U.caBoost.mul(0.55).add(0.06) as any, null as any, 1.05 as any);
+    : chromaticAberration(bloomed as any, U.caBoost.mul(0.55).add(0.06) as any, vec2(0.5) as any, 1.05 as any);
 
   post.outputNode = Fn(() => {
     const p = screenUV.sub(0.5);
