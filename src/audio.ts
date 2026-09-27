@@ -3,6 +3,7 @@
 // Layer gains ride the shared scene uniforms, so the mix follows the
 // timeline automatically (breach opens the drone, inferno grows the fire).
 import { U } from './shared';
+import { dset } from './diag';
 
 export interface Synth {
   readonly enabled: boolean;
@@ -225,6 +226,9 @@ export function createSynth(): Synth {
   /** drive the ambient layers from the shared scene uniforms */
   function update(dt: number) {
     if (!ctx || !_enabled) return;
+    // if the context got suspended (tab switch, policy), keep retrying resume
+    if (ctx.state === 'suspended') { ctx.resume().catch(() => {}); return; }
+    dset('audio', `on ctx=${ctx.state}`);
     const t0 = ctx.currentTime;
     const set = (g: GainNode | null, v: number) => g?.gain.setTargetAtTime(v, t0, 0.25);
     set(humGain, U.breach.value * 0.26);

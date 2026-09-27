@@ -246,6 +246,14 @@ body.alerted .top .cell { border-color: rgba(255, 59, 48, 0.6); }
 }
 #audio-toggle:hover { color: var(--ink); border-color: var(--line-hi); }
 #audio-toggle:focus-visible { outline: 1px solid var(--blue); outline-offset: 2px; }
+#audio-toggle.unarmed {
+  color: var(--red); border-color: var(--red);
+  animation: audio-pulse 1.4s ease-in-out infinite;
+}
+@keyframes audio-pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.45; }
+}
 
 #diag-toggle {
   position: fixed; right: 26px; bottom: 196px; z-index: 45;

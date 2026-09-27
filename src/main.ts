@@ -168,14 +168,21 @@ async function boot() {
   hud.log('TAC-FEED 04 ONLINE');
   hud.setPhase(0);
 
-  // audio: arms on the first user gesture (browser policy), toggle overrides
+  // audio: arms on the first user gesture (browser policy), toggle overrides;
+  // the button pulses TAP TO ARM until sound is live so silence is never a surprise
   const at = document.getElementById('audio-toggle')!;
-  const setAudioLabel = () => { at.textContent = `AUDIO: ${audio.enabled ? 'ON' : 'OFF'}`; };
+  const setAudioLabel = () => {
+    at.textContent = audio.enabled ? 'AUDIO: ON' : 'AUDIO: TAP TO ARM ▸';
+    at.classList.toggle('unarmed', !audio.enabled);
+  };
+  setAudioLabel();
   at.addEventListener('click', () => { audio.toggle(); setAudioLabel(); });
-  addEventListener('pointerdown', (e) => {
+  const arm = (e: Event) => {
     if (audio.enabled || e.target === at) return;
     audio.toggle(); setAudioLabel();
-  });
+  };
+  addEventListener('pointerdown', arm);
+  addEventListener('keydown', arm);
   // quiet HUD tick each time a log line lands
   new MutationObserver(() => audio.blip())
     .observe(document.getElementById('log')!, { childList: true });
