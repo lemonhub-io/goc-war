@@ -13,6 +13,7 @@ import {
 function spriteCloud(mat: THREE.SpriteNodeMaterial, count: number, order = 12): THREE.Sprite {
   const s = new THREE.Sprite(mat);
   (s as any).count = count;
+  s.userData.baseCount = count;
   s.frustumCulled = false;
   s.renderOrder = order;
   return s;

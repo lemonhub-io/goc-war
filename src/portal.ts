@@ -149,6 +149,7 @@ export function buildOrbitSparks(): THREE.Sprite {
 
   const sprite = new THREE.Sprite(mat);
   (sprite as any).count = SPARK_COUNT;
+  sprite.userData.baseCount = SPARK_COUNT;
   sprite.frustumCulled = false;
   sprite.renderOrder = 11;
   return sprite;

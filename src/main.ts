@@ -38,11 +38,12 @@ function fatal(msg: string) {
 }
 
 async function initRenderer(canvas: HTMLCanvasElement): Promise<{ renderer: THREE.WebGPURenderer | null; webgpu: boolean }> {
-  // try WebGPU first
-  if ('gpu' in navigator) {
+  const forceGL = new URLSearchParams(location.search).has('force-gl');
+  // try WebGPU first — MSAA off: the post chain renders into textures anyway
+  if (!forceGL && 'gpu' in navigator) {
     try {
       const r = new THREE.WebGPURenderer({
-        canvas, antialias: true, powerPreference: 'high-performance',
+        canvas, antialias: false, powerPreference: 'high-performance',
       });
       await r.init();
       if ((r.backend as any).isWebGPUBackend) return { renderer: r, webgpu: true };
@@ -50,12 +51,21 @@ async function initRenderer(canvas: HTMLCanvasElement): Promise<{ renderer: THRE
     } catch { /* fall through */ }
   }
   try {
-    const r = new THREE.WebGPURenderer({ canvas, antialias: true, forceWebGL: true });
+    const r = new THREE.WebGPURenderer({ canvas, antialias: false, forceWebGL: true });
     await r.init();
     return { renderer: r, webgpu: false };
   } catch (e) {
     return { renderer: null, webgpu: false };
   }
+}
+
+/** true if the GPU adapter is software-emulated (SwiftShader / llvmpipe) */
+function softwareAdapter(renderer: THREE.WebGPURenderer): boolean {
+  try {
+    const info = (renderer.backend as any)?.adapter?.info;
+    const name = `${info?.vendor ?? ''} ${info?.architecture ?? ''} ${info?.description ?? ''}`;
+    return /swiftshader|llvmpipe|software|basic render/i.test(name);
+  } catch { return false; }
 }
 
 async function boot() {
@@ -68,6 +78,18 @@ async function boot() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
   renderer.setSize(innerWidth, innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
+
+  // if the WebGPU device is lost (driver crash / GPU timeout), reload once
+  // in WebGL2 compatibility mode instead of leaving a black screen
+  if (webgpu) {
+    (renderer.backend as any).device?.lost?.then((info: any) => {
+      if (info?.reason !== 'destroyed') {
+        const u = new URL(location.href);
+        u.searchParams.set('force-gl', '1');
+        location.href = u.toString();
+      }
+    });
+  }
 
   // ---------------------------------------------------------------- scene
   const scene = new THREE.Scene();
@@ -87,7 +109,12 @@ async function boot() {
   scene.add(fireLight);
 
   const skip = new Set((new URLSearchParams(location.search).get('skip') || '').split(',').filter(Boolean));
-  const add = (name: string, o: THREE.Object3D) => { if (!skip.has(name)) scene.add(o); };
+  const scalable: THREE.Sprite[] = [];
+  const add = (name: string, o: THREE.Object3D) => {
+    if (skip.has(name)) return;
+    scene.add(o);
+    if (o.userData?.baseCount) scalable.push(o as THREE.Sprite);
+  };
 
   add('floor', buildFloor());
   add('shelves', buildShelves());
@@ -126,6 +153,36 @@ async function boot() {
     at.textContent = `AUDIO: ${audio.toggle() ? 'ON' : 'OFF'}`;
   });
 
+  // ---------------------------------------------------------------- perf governor
+  // Fill-rate is the dominant cost (big additive sprites + bloom). Scale DPR and
+  // the drawn fraction of each instanced particle system — both are live, free
+  // to change, and degrade gracefully.
+  const params = new URLSearchParams(location.search);
+  const forcedQ = params.get('q');                 // ?q=high|med|low|potato
+  const softGPU = softwareAdapter(renderer);
+  const LEVELS = [
+    { name: 'HIGH',   q: 1.0,  dpr: Math.min(devicePixelRatio, 1.6) },
+    { name: 'MED',    q: 0.7,  dpr: Math.min(devicePixelRatio, 1.2) },
+    { name: 'LOW',    q: 0.5,  dpr: 1.0 },
+    { name: 'POTATO', q: 0.35, dpr: 0.8 },
+  ];
+  let levelIdx = params.has('lite') || softGPU ? 2 : 0;
+  if (forcedQ) levelIdx = Math.max(0, LEVELS.findIndex((l) => l.name === forcedQ.toUpperCase()));
+  const autoQ = !forcedQ;
+  let qLevel = LEVELS[levelIdx];
+  let fpsEma = 60;
+  let lastQChange = 0;
+  let upStreak = 0;
+
+  const applyQuality = () => {
+    qLevel = LEVELS[levelIdx];
+    renderer.setPixelRatio(qLevel.dpr);
+    renderer.setSize(innerWidth, innerHeight);
+    for (const s of scalable) (s as any).count = Math.max(64, Math.floor(s.userData.baseCount * qLevel.q));
+    hud.setPerf(`${autoQ ? 'AUTO·' : ''}${qLevel.name}`);
+  };
+  applyQuality();
+
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
@@ -143,12 +200,26 @@ async function boot() {
   });
 
   // ---------------------------------------------------------------- loop
-  const clock = new THREE.Clock();
   let t = 0;
+  let last = performance.now();
   let frame = 0;
   renderer.setAnimationLoop(() => {
-    const dt = Math.min(clock.getDelta(), 0.1);
+    const now = performance.now();
+    const dt = Math.min((now - last) / 1000, 0.1);
+    last = now;
     t += dt;
+
+    // fps governor — down fast, up slow
+    if (dt > 0) {
+      fpsEma = fpsEma * 0.94 + (1 / dt) * 0.06;
+      if (autoQ && t > 5 && t - lastQChange > 2.0) {
+        if (fpsEma < 38 && levelIdx < LEVELS.length - 1) {
+          levelIdx++; applyQuality(); lastQChange = t; upStreak = 0;
+        } else if (fpsEma > 57 && levelIdx > 0) {
+          if (++upStreak > 240) { levelIdx--; applyQuality(); lastQChange = t; upStreak = 0; }
+        } else upStreak = 0;
+      }
+    }
 
     director.update(t, dt, camera);
     books.update(t, U.strike.value, U.breach.value);

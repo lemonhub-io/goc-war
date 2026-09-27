@@ -8,6 +8,7 @@ export interface Hud {
   feedGlitch(): void;
   feedReset(): void;
   setBackend(name: string): void;
+  setPerf(text: string): void;
   tick(t: number): void;
 }
 
@@ -21,6 +22,7 @@ export function createHud(): Hud {
   const glitchEl = $('glitch');
   const clockEl = $('clock');
   const backendEl = $('backend');
+  const perfEl = $('perf');
   const tv = {
     thaum: $('tv-thaum'), eve: $('tv-eve'), aperture: $('tv-aperture'),
     denial: $('tv-denial'), denialBar: $('tv-denial-bar'),
@@ -74,6 +76,11 @@ export function createHud(): Hud {
     backendEl.classList.toggle('degraded', name !== 'WEBGPU');
   };
 
+  const setPerf = (text: string) => {
+    perfEl.textContent = text;
+    perfEl.classList.toggle('degraded', !text.endsWith('HIGH'));
+  };
+
   let clockBase = Date.now();
   const tick = (t: number) => {
     // telemetry — derived from scene uniforms + noise
@@ -94,5 +101,5 @@ export function createHud(): Hud {
     clockEl.textContent = `T+${hh}:${mm}:${ss}`;
   };
 
-  return { log, setPhase, flash, feedGlitch, feedReset, setBackend, tick };
+  return { log, setPhase, flash, feedGlitch, feedReset, setBackend, setPerf, tick };
 }
