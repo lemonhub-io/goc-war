@@ -1,11 +1,25 @@
 // shared.ts — global uniforms, constants, procedural textures
 import * as THREE from 'three/webgpu';
 import { uniform, uniformArray, Fn, vec3, mix, smoothstep, instancedBufferAttribute } from 'three/tsl';
+import type { Node } from 'three/webgpu';
 
-/** loose-typed instanced attribute node — TSL typings return Node<unknown>,
- *  cast once here so swizzles/method chains typecheck */
-export const attr = (a: THREE.InstancedBufferAttribute | THREE.BufferAttribute): any =>
-  instancedBufferAttribute(a as any) as any;
+/** Permissive TSL node surface. The r186 typings don't model the dynamic
+ *  swizzles/math operators that attribute/storage nodes expose at runtime
+ *  (NodeExtensions interfaces are empty), so field access is funnelled
+ *  through this one declared seam instead of scattered casts. */
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+export interface TslField { [member: string]: any }
+
+/** wrap a typed node to expose TSL's dynamic member surface */
+export const field = (n: object): TslField => n as unknown as TslField;
+
+/** instanced attribute → TSL field (positions/seeds as vec4) */
+export const attr = (a: THREE.InstancedBufferAttribute | THREE.BufferAttribute): TslField =>
+  field(instancedBufferAttribute(a) as object);
+
+/** re-tag a TSL field value as a typed scalar node — for calls whose
+ *  params are typed `Scalar` (vec3()/math fns reject untyped members) */
+export const asScalar = (n: TslField): Node<'float'> => n as unknown as Node<'float'>;
 
 // ---------------------------------------------------------------- uniforms
 

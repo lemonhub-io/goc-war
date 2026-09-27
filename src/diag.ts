@@ -26,15 +26,15 @@ export function installDiagHooks() {
     dlog('ERROR', `${e.message} @ ${e.filename}:${e.lineno}:${e.colno}`);
   });
   addEventListener('unhandledrejection', (e) => {
-    const r: any = e.reason;
-    dlog('REJECT', r?.stack || r?.message || String(r));
+    const r: unknown = e.reason;
+    dlog('REJECT', r instanceof Error ? (r.stack || r.message) : String(r));
   });
 
   // Three.js TSL logs pipeline build failures via console.error/warn —
   // mirror them into the buffer so they're visible without devtools
   for (const lvl of ['error', 'warn'] as const) {
     const orig = console[lvl].bind(console);
-    console[lvl] = (...a: any[]) => {
+    console[lvl] = (...a: unknown[]) => {
       try {
         dlog(lvl.toUpperCase(), a.map((x) => {
           if (x instanceof Error) return x.stack || x.message;
@@ -53,7 +53,11 @@ export function installDiagHooks() {
 const state: Record<string, string> = {};
 export function dset(k: string, v: string) { state[k] = v; }
 
-export function diagAdapterInfo(info: any) {
+export interface AdapterInfo {
+  vendor?: string; architecture?: string; device?: string; description?: string;
+}
+
+export function diagAdapterInfo(info: AdapterInfo | undefined) {
   try {
     dset('adapter', JSON.stringify({
       vendor: info?.vendor, architecture: info?.architecture,
@@ -66,11 +70,12 @@ export function diagAdapterInfo(info: any) {
 
 export function snapshot(): string {
   const nav = navigator;
+  const deviceMemory = (nav as Navigator & { deviceMemory?: number }).deviceMemory;
   const head = [
     `== GOC-WAR DIAGNOSTICS ${new Date().toISOString()} ==`,
     `url: ${location.href}`,
     `ua: ${nav.userAgent}`,
-    `cores: ${nav.hardwareConcurrency} mem: ${(nav as any).deviceMemory ?? '?'}GB dpr: ${devicePixelRatio}`,
+    `cores: ${nav.hardwareConcurrency} mem: ${deviceMemory ?? '?'}GB dpr: ${devicePixelRatio}`,
     `vp: ${innerWidth}x${innerHeight} hidden: ${document.hidden}`,
     `gpu-in-navigator: ${'gpu' in nav}`,
     ...Object.entries(state).map(([k, v]) => `${k}: ${v}`),

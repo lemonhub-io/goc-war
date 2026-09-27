@@ -7,12 +7,12 @@ import {
 } from 'three/tsl';
 import {
   U, PORTAL, emberRamp, TWO_PI, FIRE_ZONE_COUNT, buildFireZones,
-  makeSmokeTexture, makeFlameTexture, makePageAtlas, attr,
+  makeSmokeTexture, makeFlameTexture, makePageAtlas, attr, field, asScalar, TslField,
 } from './shared';
 
 function spriteCloud(mat: THREE.SpriteNodeMaterial, count: number, order = 12): THREE.Sprite {
   const s = new THREE.Sprite(mat);
-  (s as any).count = count;
+  s.count = count;
   s.userData.baseCount = count;
   s.frustumCulled = false;
   s.renderOrder = order;
@@ -128,7 +128,7 @@ export function buildEmbers(webgpu: boolean): EmberSystem {
 
       // impact shock impulses
       Loop(4, ({ i: k }) => {
-        const imp = U.impacts.element(k) as any;
+        const imp = field(U.impacts.element(k));
         const ia = U.time.sub(imp.w);
         If(ia.greaterThan(0).and(ia.lessThan(1.5)), () => {
           const dv = p.xyz.sub(imp.xyz);
@@ -204,12 +204,12 @@ export function buildEmbers(webgpu: boolean): EmberSystem {
   const ms = attr(new THREE.InstancedBufferAttribute(misc, 4));
 
   mat.positionNode = Fn(() => {
-    const ph: any = fract(U.time.div(ms.z).add(bs.w));
+    const ph = fract(U.time.div(ms.z).add(bs.w));
     const ageN = ph;
     const sway = vec3(
-      sin(ageN.mul(9).add(ms.y)).mul(1.6) as any,
-      ageN.mul(ms.x),
-      cos(ageN.mul(7).add(ms.y)).mul(1.6) as any,
+      asScalar(sin(ageN.mul(9).add(ms.y)).mul(1.6)),
+      asScalar(ageN.mul(ms.x)),
+      asScalar(cos(ageN.mul(7).add(ms.y)).mul(1.6)),
     );
     // pull toward portal swirl high in the cycle
     const toC = vec3(PORTAL.x, PORTAL.y, PORTAL.z).sub(bs.xyz);
@@ -354,7 +354,7 @@ function pageSeeds(count: number, burning: boolean): PageAttrs {
 export function buildPageVortex(): { clean: THREE.Sprite; burning: THREE.Sprite } {
   const atlas = makePageAtlas();
 
-  const mkPos = (pa: any, pb: any) => Fn(() => {
+  const mkPos = (pa: TslField, pb: TslField) => Fn(() => {
     const spin = float(0.3).add(U.strike.mul(1.9));
     const ang = pa.z.add(U.time.mul(pa.y).mul(spin));
     // harvest subset spirals into the throat as strike ramps
@@ -362,13 +362,13 @@ export function buildPageVortex(): { clean: THREE.Sprite; burning: THREE.Sprite 
     const rr = pa.x.mul(pull.oneMinus().max(0.05));
     const bob = sin(U.time.mul(1.1).add(pa.z.mul(3.0))).mul(0.9);
     return vec3(
-      cos(ang).mul(rr).add(PORTAL.x) as any,
-      sin(ang).mul(rr).mul(0.8).add(bob).add(PORTAL.y) as any,
-      pa.w.add(sin(ang.mul(1.7).add(pa.z)).mul(1.2)).add(PORTAL.z) as any,
+      asScalar(cos(ang).mul(rr).add(PORTAL.x)),
+      asScalar(sin(ang).mul(rr).mul(0.8).add(bob).add(PORTAL.y)),
+      asScalar(pa.w.add(sin(ang.mul(1.7).add(pa.z)).mul(1.2)).add(PORTAL.z)),
     );
   })();
 
-  const mkRot = (pa: any, pb: any) => Fn(() => {
+  const mkRot = (pa: TslField, pb: TslField) => Fn(() => {
     const spin = float(0.3).add(U.strike.mul(1.9));
     const ang = pa.z.add(U.time.mul(pa.y).mul(spin));
     const flutter = sin(U.time.mul(3.1).add(pb.x.mul(60))).mul(0.6);

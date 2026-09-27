@@ -3,20 +3,20 @@
 // `lite` tier: weaker bloom, no chromatic aberration — roughly halves the
 // per-pixel post cost on weak GPUs while keeping the signature glow.
 import * as THREE from 'three/webgpu';
-import { Fn, vec2, vec3, vec4, pass, screenUV, hash, smoothstep, sin } from 'three/tsl';
+import { Fn, float, vec3, vec4, pass, screenUV, hash, smoothstep, sin } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { chromaticAberration } from 'three/addons/tsl/display/ChromaticAberrationNode.js';
-import { U } from './shared';
+import { U, field, TslField } from './shared';
 
 export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, lite = false): THREE.PostProcessing {
   const post = new THREE.PostProcessing(renderer);
   const scenePass = pass(scene, camera);
   const sceneColor = scenePass.getTextureNode();
 
-  const bloomed = sceneColor.add(bloom(sceneColor as any, lite ? 0.55 : 0.85, 0.62, 0.02) as any);
-  const c: any = lite
+  const bloomed = field(sceneColor).add(bloom(sceneColor, lite ? 0.55 : 0.85, 0.62, 0.02));
+  const c: TslField = lite
     ? bloomed
-    : chromaticAberration(bloomed as any, U.caBoost.mul(0.55).add(0.06) as any, vec2(0.5) as any, 1.05 as any);
+    : field(chromaticAberration(bloomed, field(U.caBoost).mul(0.55).add(0.06), new THREE.Vector2(0.5, 0.5), float(1.05)));
 
   post.outputNode = Fn(() => {
     const p = screenUV.sub(0.5);

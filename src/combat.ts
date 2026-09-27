@@ -91,7 +91,7 @@ export function buildCombat(hud: Hud, audio: Synth): Combat {
   })();
 
   const lances = new THREE.Sprite(lanceMat);
-  (lances as any).count = MAX_LANCES;
+  lances.count = MAX_LANCES;
   lances.frustumCulled = false;
   lances.renderOrder = 16;
 
@@ -140,7 +140,7 @@ export function buildCombat(hud: Hud, audio: Synth): Combat {
     return vec4(col.mul(a), a);
   })();
   const bursts = new THREE.Sprite(burstMat);
-  (bursts as any).count = MAX_BURSTS * SPARKS_PER_BURST;
+  bursts.count = MAX_BURSTS * SPARKS_PER_BURST;
   bursts.frustumCulled = false;
   bursts.renderOrder = 17;
 

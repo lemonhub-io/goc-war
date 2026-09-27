@@ -45,6 +45,19 @@ function fatal(msg: string) {
   showDiag();
 }
 
+/** runtime shape of the WebGPU backend — `adapter`/`device` exist but are
+ *  absent from the shipped .d.ts */
+interface GpuBackend {
+  isWebGPUBackend?: boolean;
+  adapter?: {
+    info?: { vendor?: string; architecture?: string; device?: string; description?: string };
+  };
+  device?: { lost: Promise<{ reason: string; message: string }> };
+}
+
+const backendOf = (r: THREE.WebGPURenderer): GpuBackend =>
+  r.backend as unknown as GpuBackend;
+
 async function initRenderer(canvas: HTMLCanvasElement): Promise<THREE.WebGPURenderer | null> {
   // WebGPU only — no WebGL fallback
   if (!('gpu' in navigator)) { dlog('INIT', 'navigator.gpu absent'); return null; }
@@ -53,11 +66,11 @@ async function initRenderer(canvas: HTMLCanvasElement): Promise<THREE.WebGPURend
       canvas, antialias: false, powerPreference: 'high-performance',
     });
     await r.init();
-    if (!(r.backend as any).isWebGPUBackend) { dlog('INIT', 'renderer init fell through to non-WebGPU backend'); return null; }
+    if (!backendOf(r).isWebGPUBackend) { dlog('INIT', 'renderer init fell through to non-WebGPU backend'); return null; }
     dlog('INIT', 'WebGPU renderer up');
     return r;
-  } catch (e: any) {
-    dlog('INIT', `renderer init threw: ${e?.message ?? e}`);
+  } catch (e) {
+    dlog('INIT', `renderer init threw: ${e instanceof Error ? e.message : e}`);
     return null;
   }
 }
@@ -65,7 +78,7 @@ async function initRenderer(canvas: HTMLCanvasElement): Promise<THREE.WebGPURend
 /** true if the GPU adapter is software-emulated (SwiftShader / llvmpipe) */
 function softwareAdapter(renderer: THREE.WebGPURenderer): boolean {
   try {
-    const info = (renderer.backend as any)?.adapter?.info;
+    const info = backendOf(renderer).adapter?.info;
     const name = `${info?.vendor ?? ''} ${info?.architecture ?? ''} ${info?.description ?? ''}`;
     return /swiftshader|llvmpipe|software|basic render/i.test(name);
   } catch { return false; }
@@ -85,13 +98,13 @@ async function boot() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
   renderer.setSize(innerWidth, innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  diagAdapterInfo((renderer.backend as any).adapter?.info);
+  diagAdapterInfo(backendOf(renderer).adapter?.info);
   armWatchdog();
 
   // if the WebGPU device is lost (driver crash / GPU timeout), fail visibly
-  (renderer.backend as any).device?.lost?.then((info: any) => {
-    if (info?.reason !== 'destroyed') {
-      dlog('DEVICE', `lost: ${info?.reason} ${info?.message ?? ''}`);
+  backendOf(renderer).device?.lost.then((info) => {
+    if (info.reason !== 'destroyed') {
+      dlog('DEVICE', `lost: ${info.reason} ${info.message ?? ''}`);
       fatal('WEBGPU DEVICE LOST — reload the page to retry.');
     }
   });
@@ -170,7 +183,7 @@ async function boot() {
   const softGPU = softwareAdapter(renderer);
   const mobileUA = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
   const weakHW = (navigator.hardwareConcurrency ?? 8) <= 4
-    || ((navigator as any).deviceMemory ?? 8) <= 4;
+    || ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8) <= 4;
   const LEVELS = [
     { name: 'HIGH',   q: 1.0,  px: 4.2e6, dprCap: 1.6,  lite: false, puff: 1.0 },
     { name: 'MED',    q: 0.7,  px: 2.6e6, dprCap: 1.25, lite: false, puff: 1.0 },
@@ -199,7 +212,7 @@ async function boot() {
     );
     renderer.setPixelRatio(dpr);
     renderer.setSize(innerWidth, innerHeight);
-    for (const s of scalable) (s as any).count = Math.max(64, Math.floor(s.userData.baseCount * qLevel.q));
+    for (const s of scalable) s.count = Math.max(64, Math.floor(s.userData.baseCount * qLevel.q));
     U.puffScale.value = qLevel.puff;
     post = qLevel.lite ? postLite : postFull;
     dset('quality', `${autoQ ? 'AUTO·' : ''}${qLevel.name}`);
@@ -258,9 +271,9 @@ async function boot() {
     try {
       if (skip.has('post')) renderer.render(scene, camera); else post.render();
       diagFrame();
-    } catch (e: any) {
+    } catch (e) {
       // pipeline build failures land here on some drivers — surface once
-      if ((frame & 63) === 0) dlog('RENDER', e?.stack || e?.message || String(e));
+      if ((frame & 63) === 0) dlog('RENDER', e instanceof Error ? (e.stack || e.message) : String(e));
       if (frame === 0) showDiag('first frame threw');
     }
 
