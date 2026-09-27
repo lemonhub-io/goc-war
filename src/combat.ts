@@ -223,6 +223,7 @@ export function buildCombat(hud: Hud, audio: Synth): Combat {
       spawnLance(t + k * (0.1 + Math.random() * 0.14), from, target, 0.5 + Math.random() * 0.22);
     }
     hud.flash('small');
+    audio.lanceFire();
     audio.boom(0.4 + Math.random() * 0.3);
     hud.log(pickLanceLog());
   };

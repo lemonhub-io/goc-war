@@ -160,7 +160,7 @@ async function boot() {
   // so quality transitions never recompile shaders mid-run
   const postFull = buildPost(renderer, scene, camera, false);
   const postLite = buildPost(renderer, scene, camera, true);
-  const director = new Director(combat, hud);
+  const director = new Director(combat, hud, audio);
 
   document.getElementById('emblem-slot')!.innerHTML = makeEmblemSVG();
   document.getElementById('boot-emblem')!.innerHTML = makeEmblemSVG(44);
@@ -168,11 +168,17 @@ async function boot() {
   hud.log('TAC-FEED 04 ONLINE');
   hud.setPhase(0);
 
-  // audio toggle
+  // audio: arms on the first user gesture (browser policy), toggle overrides
   const at = document.getElementById('audio-toggle')!;
-  at.addEventListener('click', () => {
-    at.textContent = `AUDIO: ${audio.toggle() ? 'ON' : 'OFF'}`;
+  const setAudioLabel = () => { at.textContent = `AUDIO: ${audio.enabled ? 'ON' : 'OFF'}`; };
+  at.addEventListener('click', () => { audio.toggle(); setAudioLabel(); });
+  addEventListener('pointerdown', (e) => {
+    if (audio.enabled || e.target === at) return;
+    audio.toggle(); setAudioLabel();
   });
+  // quiet HUD tick each time a log line lands
+  new MutationObserver(() => audio.blip())
+    .observe(document.getElementById('log')!, { childList: true });
 
   // ---------------------------------------------------------------- perf governor
   // Fill-rate is the dominant cost (big additive sprites + post chain). Per
@@ -261,6 +267,7 @@ async function boot() {
     }
 
     director.update(t, dt, camera);
+    audio.update(dt);
     books.update(t, U.strike.value, U.breach.value);
 
     // light rig breathes with the scene

@@ -3,6 +3,7 @@ import * as THREE from 'three/webgpu';
 import { U } from './shared';
 import type { Combat } from './combat';
 import type { Hud } from './hud';
+import type { Synth } from './audio';
 
 export const LOOP = 44;
 
@@ -22,6 +23,7 @@ function seg(t: number, a: number, b: number): number {
 export class Director {
   private combat: Combat;
   private hud: Hud;
+  private audio: Synth;
   private camPos = new THREE.Vector3(0, 4.6, 26);
   private look = new THREE.Vector3(0, 9, -16);
   private mouse = new THREE.Vector2();
@@ -32,8 +34,8 @@ export class Director {
   private resetFired = false;
   private elapsed = 0;
 
-  constructor(combat: Combat, hud: Hud) {
-    this.combat = combat; this.hud = hud;
+  constructor(combat: Combat, hud: Hud, audio: Synth) {
+    this.combat = combat; this.hud = hud; this.audio = audio;
     window.addEventListener('pointermove', (e) => {
       this.mouse.set((e.clientX / innerWidth - 0.5) * 2, (e.clientY / innerHeight - 0.5) * 2);
     });
@@ -91,7 +93,7 @@ export class Director {
       this.lastPhase = ph;
       this.hud.setPhase(ph);
       if (ph === 3) this.hud.log('SEARING IN EFFECT — LIBRARY DENIED');
-      if (ph === 2) this.hud.log('FIREBREAK ELEMENTS THROUGH — WEAPONS FREE');
+      if (ph === 2) { this.audio.klaxon(); this.hud.log('FIREBREAK ELEMENTS THROUGH — WEAPONS FREE'); }
     }
 
     // ---------- camera
