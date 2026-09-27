@@ -253,10 +253,12 @@ export function buildFlames(): THREE.Sprite {
   mat.positionNode = Fn(() => {
     const s = fd.w;
     const age = fract(U.time.mul(0.9).add(s.mul(9.3)));
+    // gusty sway — amplitude surges and dies down per flame
+    const gust = float(0.65).add(sin(U.time.mul(0.43).add(s.mul(17.0))).mul(0.35));
     return vec3(
-      fd.x.add(sin(U.time.mul(2.0).add(s.mul(50))).mul(0.25)),
+      fd.x.add(sin(U.time.mul(2.0).add(s.mul(50))).mul(0.25).mul(gust)),
       fd.y.add(age.mul(1.1).add(s.mul(2.4))),
-      fd.z.add(cos(U.time.mul(1.7).add(s.mul(37))).mul(0.25)),
+      fd.z.add(cos(U.time.mul(1.7).add(s.mul(37))).mul(0.25).mul(gust)),
     );
   })();
   mat.rotationNode = Fn(() => sin(U.time.mul(1.9).add(fd.w.mul(40))).mul(0.35))();
@@ -356,7 +358,9 @@ export function buildPageVortex(): { clean: THREE.Sprite; burning: THREE.Sprite 
 
   const mkPos = (pa: TslField, pb: TslField) => Fn(() => {
     const spin = float(0.3).add(U.strike.mul(1.9));
-    const ang = pa.z.add(U.time.mul(pa.y).mul(spin));
+    // orbital flutter — pages surge and slacken against the vortex pull
+    const wob = sin(U.time.mul(0.42).add(pa.z.mul(2.0))).mul(0.3);
+    const ang = pa.z.add(U.time.mul(pa.y).mul(spin)).add(wob);
     // harvest subset spirals into the throat as strike ramps
     const pull = select(pb.x.lessThan(0.3), U.strike.mul(0.85), float(0));
     const rr = pa.x.mul(pull.oneMinus().max(0.05));

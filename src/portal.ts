@@ -22,8 +22,11 @@ export function buildBreachRing(): THREE.Mesh {
     const r = pp.length().mul(2.0); // inner edge ~0.80, outer ~1.0
     const rn = r.sub(0.80).div(0.20); // 0..1 across ring band
 
-    // rotating energy sectors
-    const rot = a.sub(U.time.mul(0.22));
+    // rotating energy sectors — spin accelerates as the Way opens, with a
+    // slow phase wobble so it never feels metronomic
+    const spinT = U.time.mul(0.22).mul(U.breach.mul(1.7).add(0.6))
+      .add(sin(U.time.mul(0.31)).mul(0.55));
+    const rot = a.sub(spinT);
     const sectors = pow(abs(sin(rot.mul(9.0))), 6.0).mul(0.5)
       .add(pow(abs(sin(rot.mul(23.0).add(1.7))), 14.0).mul(0.6));
 
@@ -59,8 +62,9 @@ export function buildVoidDisc(): THREE.Mesh {
     const pp = uv().sub(0.5);
     const a = atan(pp.y, pp.x);
     const r = pp.length().mul(2.0);
-    // slow matter swirl — the dark beyond
-    const sw = a.add(U.time.mul(0.12)).sub(r.mul(4.2));
+    // slow matter swirl — the dark beyond; quickens and wobbles as it opens
+    const sw = a.add(U.time.mul(0.12).add(U.breach.mul(U.time.mul(0.28))))
+      .add(sin(U.time.mul(0.23)).mul(0.6)).sub(r.mul(4.2));
     const n = mx_noise_float(vec3(sw.mul(3.0), r.mul(5.0), U.time.mul(0.25))).mul(0.5).add(0.5);
     const col = mix(vec3(0.004, 0.005, 0.012), vec3(0.05, 0.03, 0.12), n.mul(0.5))
       .add(vec3(0.01, 0.015, 0.05).mul(smoothstep(0.85, 1.0, r)).mul(U.breach));
@@ -83,7 +87,8 @@ export function buildVoidFilaments(): THREE.Mesh {
     const pp = uv().sub(0.5);
     const a = atan(pp.y, pp.x);
     const r = pp.length().mul(2.0);
-    const sw = a.add(U.time.mul(0.16)).sub(r.mul(5.0));
+    const sw = a.add(U.time.mul(0.16).add(U.breach.mul(U.time.mul(0.3))))
+      .add(sin(U.time.mul(0.27).add(2.0)).mul(0.5)).sub(r.mul(5.0));
     // icy filaments spiraling into the throat
     const f1 = pow(mx_noise_float(vec3(sw.mul(6.0), r.mul(7.0).sub(U.time.mul(0.5)), 3.1)).mul(0.5).add(0.5), 6.0);
     const f2 = pow(mx_noise_float(vec3(sw.mul(11.0).add(9.2), r.mul(10.0), U.time.mul(0.35))).mul(0.5).add(0.5), 8.0);
@@ -122,7 +127,10 @@ export function buildOrbitSparks(): THREE.Sprite {
   });
 
   mat.positionNode = Fn(() => {
-    const ang = sd.x.add(U.time.mul(sd.y.mul(1.6)));
+    // per-spark tangential surge — sparks bunch and spread instead of
+    // marching at a fixed angular rate
+    const wob = sin(U.time.mul(sd.w.mul(0.9).add(0.35)).add(sd.x.mul(2.0))).mul(0.38);
+    const ang = sd.x.add(U.time.mul(sd.y.mul(1.6)).mul(U.breach.mul(0.9).add(0.6))).add(wob);
     // most sparks hug the ring; ~12% eject outward and rejoin
     const ej = fract(U.time.mul(0.22).add(sd.w));
     const eject = select(sd.z.greaterThan(0.88), ej.mul(ej).mul(6.0), float(0));

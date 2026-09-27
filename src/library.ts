@@ -176,10 +176,12 @@ export function buildBooks(): BookSystem {
   const update = (t: number, strike: number, breach: number) => {
     for (let i = 0; i < BOOK_COUNT; i++) {
       const b = books[i];
-      // gentle levitation drift
+      // gentle levitation drift — amplitude beats make it breathe, not metronome
+      const beat = 0.65 + 0.35 * Math.sin(t * 0.21 + b.phase * 2.1);
       b.pos.copy(b.base);
-      b.pos.y += Math.sin(t * b.bobSpeed + b.phase) * b.bobAmp;
-      b.pos.x += Math.sin(t * b.bobSpeed * 0.6 + b.phase * 1.7) * b.bobAmp * 0.5;
+      b.pos.y += Math.sin(t * b.bobSpeed + b.phase) * b.bobAmp * beat;
+      b.pos.x += Math.sin(t * b.bobSpeed * 0.6 + b.phase * 1.7) * b.bobAmp * 0.5 * beat;
+      b.pos.z += Math.cos(t * b.bobSpeed * 0.45 + b.phase * 0.9) * b.bobAmp * 0.3 * beat;
 
       let sc = b.scale;
       let hot = 0;
@@ -204,9 +206,9 @@ export function buildBooks(): BookSystem {
       if (b.dead) { sc = 0.0001; }
 
       e.set(
-        Math.sin(t * 0.31 + b.phase) * 0.5,
-        t * b.spin + b.phase,
-        Math.cos(t * 0.27 + b.phase) * 0.5,
+        Math.sin(t * 0.31 + b.phase) * 0.5 + Math.sin(t * 0.83 + b.phase * 3.1) * 0.15,
+        t * b.spin + b.phase + Math.sin(t * 0.45 + b.phase * 1.3) * 0.3,
+        Math.cos(t * 0.27 + b.phase) * 0.5 + Math.cos(t * 0.77 + b.phase * 2.3) * 0.15,
       );
       q.setFromEuler(e);
       s.setScalar(sc);

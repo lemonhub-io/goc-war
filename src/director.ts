@@ -24,13 +24,19 @@ export class Director {
   private combat: Combat;
   private hud: Hud;
   private audio: Synth;
-  private camPos = new THREE.Vector3(0, 4.6, 26);
-  private look = new THREE.Vector3(0, 9, -16);
+  private camPosSm = new THREE.Vector3(0, 4.6, 26);
+  private lookSm = new THREE.Vector3(0, 9, -16);
+  private rollSm = 0;
+  private fovSm = 55;
+  private posTarget = new THREE.Vector3();
+  private lookTarget = new THREE.Vector3();
   private mouse = new THREE.Vector2();
   private mouseSm = new THREE.Vector2();
   private volleyIdx = 0;
+  private volleyJitter: number[] = VOLLEYS.map(() => 0);
   private lastPhase = -1;
   private breachFired = false;
+  private breachDoneFired = false;
   private resetFired = false;
   private elapsed = 0;
 
@@ -53,8 +59,8 @@ export class Director {
 
     // ---------- global uniforms
     U.time.value = t;
-    U.breach.value = seg(pt, T_BREACH_HIT - 1.2, T_BREACH_DONE);
-    U.strike.value = seg(pt, T_BREACH_DONE - 1.5, T_BREACH_DONE + 2.0);
+    U.breach.value = Math.pow(seg(pt, T_BREACH_HIT - 1.2, T_BREACH_DONE), 0.8);   // fast tear, slow saturate
+    U.strike.value = Math.pow(seg(pt, T_BREACH_DONE - 1.5, T_BREACH_DONE + 2.0), 1.4); // snapped commitment
     U.inferno.value = Math.min(1, seg(pt, 15, 34) * 1.15 + seg(pt, 38, 43) * 0.05);
     U.shake.value *= Math.exp(-dt * 3.0);
     U.flash.value *= Math.exp(-dt * 4.5);
@@ -66,7 +72,9 @@ export class Director {
       if (this.resetFired) {
         this.resetFired = false;
         this.volleyIdx = 0;
+        this.volleyJitter = VOLLEYS.map(() => (Math.random() - 0.5) * 0.55);
         this.breachFired = false;
+        this.breachDoneFired = false;
         this.hud.feedReset();
       }
     }
@@ -75,7 +83,14 @@ export class Director {
       this.combat.breachBlast(t);
       this.hud.log('WAY BREACH CONFIRMED — APERTURE 0.0 → 7.4 M');
     }
-    while (this.volleyIdx < VOLLEYS.length && pt >= VOLLEYS[this.volleyIdx]) {
+    // secondary accent when the aperture finishes opening — a settle thump
+    if (!this.breachDoneFired && pt >= T_BREACH_DONE) {
+      this.breachDoneFired = true;
+      U.shake.value += 0.35;
+      U.flash.value = Math.max(U.flash.value, 0.3);
+      this.audio.boom(0.5);
+    }
+    while (this.volleyIdx < VOLLEYS.length && pt >= VOLLEYS[this.volleyIdx] + this.volleyJitter[this.volleyIdx]) {
       this.combat.fireVolley(t);
       this.volleyIdx++;
     }
@@ -107,25 +122,37 @@ export class Director {
     const baseY = 4.6 + push * 1.1 + orbit * 1.8 + pull * 5.2;
     const baseZ = 26 - push * 5.5 - orbit * 3.0 + pull * 5.5;
 
-    // handheld sway + impact shake
+    // ---------- handheld rig: scripted targets are damped, impacts are not
     const sh = U.shake.value;
     const swayX = Math.sin(t * 0.37) * 0.35 + Math.sin(t * 1.31) * 0.1;
     const swayY = Math.cos(t * 0.29) * 0.28;
     const n = (f: number) => (Math.sin(t * f * 9.1) + Math.sin(t * f * 13.7) * 0.5) * 0.5;
-    this.camPos.set(
-      baseX + swayX + n(1.7) * sh * 1.1,
-      baseY + swayY + n(2.3) * sh * 0.9,
-      baseZ + n(1.3) * sh * 0.7,
-    );
-    camera.position.copy(this.camPos);
+    const dampK = (l: number) => 1 - Math.exp(-l * dt);
 
-    this.look.set(
-      Math.sin(ang * 0.6) * 4 + this.mouseSm.x * 2.6 + n(2.9) * sh * 1.4,
-      8.6 + push * 1.6 - orbit * 0.8 - this.mouseSm.y * 1.8 + n(3.7) * sh,
+    // position chases its target with mass — shake rides on top, unsmoothed
+    this.posTarget.set(baseX + swayX, baseY + swayY, baseZ);
+    this.camPosSm.lerp(this.posTarget, dampK(2.3));
+    camera.position.copy(this.camPosSm);
+    camera.position.x += n(1.7) * sh * 1.1;
+    camera.position.y += n(2.3) * sh * 0.9;
+    camera.position.z += n(1.3) * sh * 0.7;
+
+    this.lookTarget.set(
+      Math.sin(ang * 0.6) * 4 + this.mouseSm.x * 2.6 + swayX * 0.6 + n(2.9) * sh * 1.4,
+      8.6 + push * 1.6 - orbit * 0.8 - this.mouseSm.y * 1.8 + swayY * 0.5 + n(3.7) * sh,
       -15.5,
     );
-    camera.lookAt(this.look);
-    camera.fov = 55 + U.flash.value * 4 - orbit * 2;
+    this.lookSm.lerp(this.lookTarget, dampK(3.0));
+    camera.lookAt(this.lookSm);
+
+    // organic roll — leans into sway, kicks during impacts
+    const rollT = -swayX * 0.016 - this.mouseSm.x * 0.007 + n(1.1) * sh * 0.02;
+    this.rollSm += (rollT - this.rollSm) * dampK(3.6);
+    camera.rotateZ(this.rollSm);
+
+    const fovT = 55 + U.flash.value * 4 - orbit * 2 + Math.sin(t * 0.21) * 0.6;
+    this.fovSm += (fovT - this.fovSm) * dampK(5);
+    camera.fov = this.fovSm;
     camera.updateProjectionMatrix();
 
     // combat housekeeping
