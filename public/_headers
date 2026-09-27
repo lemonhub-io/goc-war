@@ -1,0 +1,8 @@
+# Cloudflare static-assets headers — enable cross-origin isolation so the
+# SharedArrayBuffer/atomics WASM build (rayon thread pool) can run.
+# External font CSS/files from loli.net carry CORP: cross-origin + ACAO:*,
+# so they keep loading under require-corp.
+/*
+  Cross-Origin-Opener-Policy: same-origin
+  Cross-Origin-Embedder-Policy: require-corp
+  Cross-Origin-Resource-Policy: same-origin

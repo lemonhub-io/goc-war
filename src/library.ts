@@ -5,6 +5,7 @@ import {
   floor, positionWorld, positionLocal, instanceIndex,
 } from 'three/tsl';
 import { U, PORTAL } from './shared';
+import { loadBooksWasm, type BooksWasm } from './wasm';
 
 // ------------------------------------------------------------------ shelves
 
@@ -113,6 +114,8 @@ export interface BookSystem {
   mesh: THREE.InstancedMesh;
   update(t: number, strike: number, breach: number): void;
   reset(): void;
+  /** 'js' until the wasm sim loads, then 'wasm-simd' or 'wasm-mt' */
+  backend(): string;
 }
 
 const BOOK_COUNT = 460;
@@ -173,7 +176,7 @@ export function buildBooks(): BookSystem {
   const toPortal = new THREE.Vector3();
   const HOT = new THREE.Color(0xff7a28);
 
-  const update = (t: number, strike: number, breach: number) => {
+  const updateJs = (t: number, strike: number, breach: number) => {
     for (let i = 0; i < BOOK_COUNT; i++) {
       const b = books[i];
       // gentle levitation drift — amplitude beats make it breathe, not metronome
@@ -225,7 +228,7 @@ export function buildBooks(): BookSystem {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   };
 
-  const reset = () => {
+  const resetJs = () => {
     for (let i = 0; i < BOOK_COUNT; i++) {
       const b = books[i];
       b.dead = false;
@@ -236,5 +239,43 @@ export function buildBooks(): BookSystem {
     if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
   };
 
-  return { mesh, update, reset };
+  // ---- wasm upgrade path ------------------------------------------------
+  // The book loop runs in Rust (wasm/): SIMD build everywhere, rayon threads
+  // when the page is cross-origin isolated. Attribute storage is swapped to
+  // zero-copy views over wasm linear memory. JS path stays as fallback.
+  let wasm: BooksWasm | null = null;
+  let mode = 'js';
+
+  loadBooksWasm(BOOK_COUNT).then((w) => {
+    if (!w) return;
+    wasm = w;
+    mode = w.mode;
+    mesh.instanceMatrix = new THREE.InstancedBufferAttribute(w.mats, 16);
+    mesh.instanceColor = new THREE.InstancedBufferAttribute(w.cols, 3);
+    mesh.instanceMatrix.needsUpdate = true;
+    mesh.instanceColor.needsUpdate = true;
+    w.sim.reset();
+    w.sim.update(0, 0, 0);
+  });
+
+  const update = (t: number, strike: number, breach: number) => {
+    if (wasm) {
+      wasm.sim.update(t, strike, breach);
+      mesh.instanceMatrix.needsUpdate = true;
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      return;
+    }
+    updateJs(t, strike, breach);
+  };
+
+  const reset = () => {
+    if (wasm) {
+      wasm.sim.reset();
+      if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+      return;
+    }
+    resetJs();
+  };
+
+  return { mesh, update, reset, backend: () => mode };
 }

@@ -5,6 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite --host 127.0.0.1",
+    "build:wasm": "bash wasm/build.sh",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview"
   },

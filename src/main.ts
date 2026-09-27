@@ -167,6 +167,14 @@ async function boot() {
   hud.setBackend('WEBGPU');
   hud.log('TAC-FEED 04 ONLINE');
   hud.setPhase(0);
+  // report which sim backend took over the book loop (see wasm.ts)
+  const simTimer = setInterval(() => {
+    const b = books.backend();
+    if (b === 'js') return;
+    clearInterval(simTimer);
+    hud.log(`SIM BACKEND ${b.toUpperCase()}${crossOriginIsolated ? ` ${navigator.hardwareConcurrency}C` : ''}`);
+    dset('books-sim', b);
+  }, 400);
 
   // audio: arms on the first user gesture (browser policy), toggle overrides;
   // the button pulses TAP TO ARM until sound is live so silence is never a surprise

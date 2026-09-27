@@ -1,0 +1,19 @@
+[package]
+name = "goc_wasm"
+version = "0.1.0"
+edition = "2021"
+
+[lib]
+crate-type = ["cdylib"]
+
+[features]
+parallel = ["dep:wasm-bindgen-rayon", "dep:rayon"]
+
+[dependencies]
+wasm-bindgen = "0.2"
+wasm-bindgen-rayon = { version = "1.3", optional = true }
+rayon = { version = "1", optional = true }
+
+[profile.release]
+opt-level = 3
+lto = true
