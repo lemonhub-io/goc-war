@@ -13,7 +13,10 @@ const T_BREACH_DONE = 15.0;
 const T_STRIKE_END = 33.0;
 const T_END = LOOP;
 
-const VOLLEYS = [16.4, 18.1, 20.4, 22.2, 24.6, 26.8, 28.7, 30.5, 31.9];
+// volleys fire in burst groups — tighter triplets with breathing gaps
+// instead of a metronome cadence
+const VOLLEYS = [16.3, 16.8, 17.4, 20.2, 20.8, 21.4, 25.8, 26.5, 29.8, 30.4];
+const T_SALVO = 32.4;
 
 function seg(t: number, a: number, b: number): number {
   const x = Math.max(0, Math.min(1, (t - a) / (b - a)));
@@ -37,6 +40,7 @@ export class Director {
   private lastPhase = -1;
   private breachFired = false;
   private breachDoneFired = false;
+  private salvoFired = false;
   private resetFired = false;
   private elapsed = 0;
 
@@ -72,9 +76,10 @@ export class Director {
       if (this.resetFired) {
         this.resetFired = false;
         this.volleyIdx = 0;
-        this.volleyJitter = VOLLEYS.map(() => (Math.random() - 0.5) * 0.55);
+        this.volleyJitter = VOLLEYS.map(() => (Math.random() - 0.5) * 0.35);
         this.breachFired = false;
         this.breachDoneFired = false;
+        this.salvoFired = false;
         this.hud.feedReset();
       }
     }
@@ -94,6 +99,11 @@ export class Director {
       this.combat.fireVolley(t);
       this.volleyIdx++;
     }
+    // closing act — everything left goes into the Way before it seals
+    if (!this.salvoFired && pt >= T_SALVO) {
+      this.salvoFired = true;
+      this.combat.finalSalvo(t);
+    }
     // scripted log beats
     this.logBeats(pt);
     // near loop end — glitch
@@ -107,7 +117,7 @@ export class Director {
     if (ph !== this.lastPhase) {
       this.lastPhase = ph;
       this.hud.setPhase(ph);
-      if (ph === 3) this.hud.log('SEARING IN EFFECT — LIBRARY DENIED');
+      if (ph === 3) this.hud.log('ASHFALL PROTOCOL — LIBRARY DENIED');
       if (ph === 2) { this.audio.klaxon(); this.hud.log('FIREBREAK ELEMENTS THROUGH — WEAPONS FREE'); }
     }
 
@@ -117,9 +127,11 @@ export class Director {
     const pull = seg(pt, T_STRIKE_END - 1, T_END - 1);
     const push = seg(pt, T_BREACH_HIT - 1, T_BREACH_DONE);
 
-    const ang = orbit * 0.5 - 0.0;             // sweep right during strike
-    const baseX = Math.sin(ang) * 9.0 * (1 - pull);
-    const baseY = 4.6 + push * 1.1 + orbit * 1.8 + pull * 5.2;
+    // camera: sink toward the floor as the Way opens (push), sweep on a
+    // wider arc during strike (orbit), pull high to survey the ash (pull)
+    const ang = orbit * 0.65 - 0.0;
+    const baseX = Math.sin(ang) * 11.0 * (1 - pull);
+    const baseY = 5.4 - push * 1.8 + orbit * 1.9 + pull * 5.4;
     const baseZ = 26 - push * 5.5 - orbit * 3.0 + pull * 5.5;
 
     // ---------- handheld rig: scripted targets are damped, impacts are not
@@ -169,9 +181,9 @@ export class Director {
       [9.8, () => this.hud.log('APERTURE EXPANDING — 焚书协议执行中')],
       [14.5, () => this.hud.log('WAY STABILIZED — STRIKE TEAM COMMITTED')],
       [19.0, () => this.hud.log('SERPENT COUNTER-ELEMENTS: NONE DETECTED')],
-      [24.0, () => this.hud.log('CATALOGUE DENIAL PASSED 40%')],
+      [24.0, () => this.hud.log('INDEX DENIAL PASSED 40%')],
       [29.0, () => this.hud.log('THAUMIC FEEDBACK WITHIN TOLERANCE')],
-      [33.5, () => this.hud.log('ALL ELEMENTS EXFIL — SEALING WAY')],
+      [33.5, () => this.hud.log('ALL ELEMENTS EXFIL — WAY COLLAPSING')],
       [36.0, () => this.hud.log('KTE-7909-ALEXANDRIA: NEUTRALIZED')],
       [40.0, () => this.hud.log('FEED LOOP ARMS IN 4…3…2…')],
     ];

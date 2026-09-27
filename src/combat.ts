@@ -22,6 +22,7 @@ export interface Combat {
   bursts: THREE.Sprite;
   rings: THREE.InstancedMesh;
   fireVolley(t: number): void;
+  finalSalvo(t: number): void;
   breachBlast(t: number): void;
   update(t: number, dt: number): void;
   pendingCount(): number;
@@ -228,6 +229,31 @@ export function buildCombat(hud: Hud, audio: Synth): Combat {
     hud.log(pickLanceLog());
   };
 
+  /** last concentrated dump into the Way before it seals — 8 lances
+      converge on the aperture from a radial fan */
+  const finalSalvo = (t: number) => {
+    for (let k = 0; k < 8; k++) {
+      const a = (k / 8) * Math.PI * 2 + 0.35;
+      const from = new THREE.Vector3(
+        Math.cos(a) * 30,
+        16 + Math.sin(a) * 14,
+        9 + Math.sin(a * 1.7) * 10,
+      );
+      const tgt = PORTAL.clone().add(new THREE.Vector3(
+        (Math.random() - 0.5) * 4, (Math.random() - 0.5) * 4, 0));
+      spawnLance(t + k * 0.07, from, tgt, 0.4 + Math.random() * 0.15);
+    }
+    spawnRing(PORTAL.clone().setY(0.15), t + 0.7, 30, 1.4, ORANGE);
+    spawnRing(PORTAL.clone().setY(0.2), t + 0.85, 22, 1.1, BLUE);
+    U.shake.value = Math.min(1.5, U.shake.value + 0.8);
+    U.flash.value = Math.max(U.flash.value, 0.7);
+    U.caBoost.value = Math.min(1.3, U.caBoost.value + 0.8);
+    audio.lanceFire();
+    audio.boom(1.2);
+    hud.flash('big');
+    hud.log('FINAL SALVO — THAUMIC DUMP COMPLETE');
+  };
+
   const breachBlast = (t: number) => {
     // the Way tears open — massive ring + blast
     spawnBurst(t, PORTAL.clone().add(new THREE.Vector3(0, 0, 1.5)), true, 2.2);
@@ -278,7 +304,7 @@ export function buildCombat(hud: Hud, audio: Synth): Combat {
   };
 
   return {
-    lances, bursts, rings, fireVolley, breachBlast, update,
+    lances, bursts, rings, fireVolley, finalSalvo, breachBlast, update,
     pendingCount: () => pending.length,
   };
 }
@@ -286,7 +312,7 @@ export function buildCombat(hud: Hud, audio: Synth): Combat {
 const LANCE_LOGS = [
   'LANCE IMPACT — SECTOR C-9 // GREEK FIRE SPREAD',
   'MK-IV LANCE AWAY — SHELF RANK 12 DENIED',
-  'DIRECT HIT — CATALOGUE NODE BURNING',
+  'DIRECT HIT — INDEX NODE BURNING',
   'FIREBREAK-2 REPORTS CLEAN KILL ZONE',
   'THAUMIC RETURN SUPPRESSED — RE-FIRE',
   'ORDNANCE EXPENDED — DENIAL +4.2%',
