@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>UN·GOC // OP: STRANGE BOOK STRIKE</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Noto+Sans+SC:wght@700;900&family=Archivo+Black&display=swap" rel="stylesheet" />
+  <script type="module" crossorigin src="./assets/index-DGij9g55.js"></script>
+  <link rel="stylesheet" crossorigin href="./assets/index-CCQDBu2I.css">
+</head>
+<body>
+  <canvas id="scene"></canvas>
+  <div id="scanlines" aria-hidden="true"></div>
+  <div id="alert" aria-hidden="true"></div>
+  <div id="glitch" aria-hidden="true"></div>
+
+  <div id="hud" aria-hidden="true">
+    <i class="corner tl"></i><i class="corner tr"></i><i class="corner bl"></i><i class="corner br"></i>
+    <i class="tick t1"></i><i class="tick t2"></i><i class="tick t3"></i><i class="tick t4"></i>
+
+    <header class="top">
+      <div class="cell emblem">
+        <span id="emblem-slot"></span>
+        <div class="stack">
+          <b>UN·GOC</b>
+          <span>UNITED NATIONS GLOBAL OCCULT COALITION</span>
+        </div>
+      </div>
+      <div class="cell unit">
+        <b>PHYSICS DIVISION // STRIKE TEAM-1909 “FIREBREAK”</b>
+        <span>OP-CODE QBS-117 &nbsp;·&nbsp; CLEARANCE: UMBRAL-4 &nbsp;·&nbsp; COUNCIL-108 RES.117-C</span>
+      </div>
+      <div class="cell feed">
+        <b><span class="rec">●</span> TAC-FEED 04 // <span id="clock">T+00:00:00</span></b>
+        <span>RENDER: <b id="backend">…</b> // SAT-LINK NOMINAL</span>
+      </div>
+    </header>
+
+    <aside class="left">
+      <div class="panel">
+        <div class="panel-h">[ TARGET FILE ]</div>
+        <dl class="dossier">
+          <div><dt>DESIGNATION</dt><dd>KTE-7909-ALEXANDRIA</dd></div>
+          <div><dt>ALIAS</dt><dd>“THE WANDERERS’ LIBRARY”</dd></div>
+          <div><dt>CLASS</dt><dd>CROSSROADS NEXUS</dd></div>
+          <div><dt>RESPONSE</dt><dd class="red">5 — IMMEDIATE</dd></div>
+          <div><dt>ORDNANCE</dt><dd>MK-IV “GREEK FIRE” LANCE</dd></div>
+          <div><dt>DIVISION</dt><dd>PHYSICS — STRIKE</dd></div>
+        </dl>
+      </div>
+      <div class="panel">
+        <div class="panel-h">[ OPERATION ]</div>
+        <div class="phase-cell active"><b>01</b><span>APPROACH</span></div>
+        <div class="phase-cell"><b>02</b><span>BREACH</span></div>
+        <div class="phase-cell"><b>03</b><span>STRIKE</span></div>
+        <div class="phase-cell"><b>04</b><span>SEARING</span></div>
+      </div>
+    </aside>
+
+    <aside class="right">
+      <div class="panel">
+        <div class="panel-h">[ TELEMETRY ]</div>
+        <div class="trow"><span>THAUMIC FLUX</span><samp id="tv-thaum">0.0 kΨ</samp></div>
+        <div class="trow"><span>EVE RADIATION</span><samp id="tv-eve">140 mEV</samp></div>
+        <div class="trow"><span>WAY APERTURE</span><samp id="tv-aperture">0.00 m</samp></div>
+        <div class="trow"><span>CATALOGUE DENIAL</span><samp id="tv-denial">0.0%</samp></div>
+        <div class="bar"><i id="tv-denial-bar"></i></div>
+      </div>
+    </aside>
+
+    <footer class="bottom">
+      <div class="op-title">
+        <h1>奇书打击</h1>
+        <div class="sub">STRANGE BOOK STRIKE <em>// THE BOOKBURNERS RIDE // KTE-7909 DENIAL OP</em></div>
+      </div>
+      <div id="log" class="log"></div>
+    </footer>
+
+    <div class="reticle"><i></i><i></i></div>
+  </div>
+
+  <button id="audio-toggle" type="button">AUDIO: OFF</button>
+
+  <div id="boot">
+    <div class="boot-box">
+      <div id="boot-emblem"></div>
+      <div id="boot-lines"></div>
+      <div class="boot-skip">CLICK TO SKIP ▸</div>
+    </div>
+  </div>
+
+  <div id="fatal" hidden>
+    <div class="boot-box">
+      <h2>TAC-FEED OFFLINE</h2>
+      <p class="fatal-msg"></p>
+      <p class="fatal-hint">This presentation requires WebGPU (Chrome 113+, Edge 113+, Safari 26+, Firefox 141+) or WebGL2.</p>
+    </div>
+  </div>
+
+</body>
+</html>
