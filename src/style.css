@@ -267,7 +267,7 @@ body.alerted .top .cell { border-color: rgba(255, 59, 48, 0.6); }
 .boot-box h2 {
   color: var(--red); font-size: 18px; letter-spacing: 0.3em; margin-bottom: 14px;
 }
-.fatal-msg { color: var(--ink); line-height: 1.7; }
+.fatal-msg { color: var(--ink); line-height: 1.7; white-space: pre-line; }
 .fatal-hint { color: var(--dim); margin-top: 10px; font-size: 10px; line-height: 1.7; }
 
 #boot-emblem { margin-bottom: 18px; color: var(--blue); }

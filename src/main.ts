@@ -37,25 +37,17 @@ function fatal(msg: string) {
   document.getElementById('boot')!.style.display = 'none';
 }
 
-async function initRenderer(canvas: HTMLCanvasElement): Promise<{ renderer: THREE.WebGPURenderer | null; webgpu: boolean }> {
-  const forceGL = new URLSearchParams(location.search).has('force-gl');
-  // try WebGPU first — MSAA off: the post chain renders into textures anyway
-  if (!forceGL && 'gpu' in navigator) {
-    try {
-      const r = new THREE.WebGPURenderer({
-        canvas, antialias: false, powerPreference: 'high-performance',
-      });
-      await r.init();
-      if ((r.backend as any).isWebGPUBackend) return { renderer: r, webgpu: true };
-      // landed on webgl fallback silently
-    } catch { /* fall through */ }
-  }
+async function initRenderer(canvas: HTMLCanvasElement): Promise<THREE.WebGPURenderer | null> {
+  // WebGPU only — no WebGL fallback
+  if (!('gpu' in navigator)) return null;
   try {
-    const r = new THREE.WebGPURenderer({ canvas, antialias: false, forceWebGL: true });
+    const r = new THREE.WebGPURenderer({
+      canvas, antialias: false, powerPreference: 'high-performance',
+    });
     await r.init();
-    return { renderer: r, webgpu: false };
-  } catch (e) {
-    return { renderer: null, webgpu: false };
+    return (r.backend as any).isWebGPUBackend ? r : null;
+  } catch {
+    return null;
   }
 }
 
@@ -72,24 +64,19 @@ async function boot() {
   const bootDone = typeBoot();
   const canvas = document.getElementById('scene') as HTMLCanvasElement;
 
-  const { renderer, webgpu } = await initRenderer(canvas);
-  if (!renderer) { fatal('RENDERER INIT FAILED — WebGPU + WebGL2 both unavailable on this device.'); return; }
-
+  const renderer = await initRenderer(canvas);
+  if (!renderer) {
+    fatal('WEBGPU REQUIRED — this page cannot be accessed on this device/browser.\nUSE: Chrome/Edge 113+, Safari 26+, or Firefox 141+ with hardware acceleration enabled.');
+    return;
+  }
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
   renderer.setSize(innerWidth, innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
 
-  // if the WebGPU device is lost (driver crash / GPU timeout), reload once
-  // in WebGL2 compatibility mode instead of leaving a black screen
-  if (webgpu) {
-    (renderer.backend as any).device?.lost?.then((info: any) => {
-      if (info?.reason !== 'destroyed') {
-        const u = new URL(location.href);
-        u.searchParams.set('force-gl', '1');
-        location.href = u.toString();
-      }
-    });
-  }
+  // if the WebGPU device is lost (driver crash / GPU timeout), fail visibly
+  (renderer.backend as any).device?.lost?.then((info: any) => {
+    if (info?.reason !== 'destroyed') fatal('WEBGPU DEVICE LOST — reload the page to retry.');
+  });
 
   // ---------------------------------------------------------------- scene
   const scene = new THREE.Scene();
@@ -122,9 +109,9 @@ async function boot() {
   add('books', books.mesh);
   add('portal', buildPortal());
   add('dust', buildDust());
-  const embers = buildEmbers(webgpu && !skip.has('compute'));
+  const embers = buildEmbers(!skip.has('compute'));
   add('embers', embers.object);
-  if (webgpu && embers.initKernel) await renderer.computeAsync(embers.initKernel);
+  if (embers.initKernel) await renderer.computeAsync(embers.initKernel);
   add('flames', buildFlames());
   add('smoke', buildSmoke());
   const vortex = buildPageVortex();
@@ -143,7 +130,7 @@ async function boot() {
 
   document.getElementById('emblem-slot')!.innerHTML = makeEmblemSVG();
   document.getElementById('boot-emblem')!.innerHTML = makeEmblemSVG(44);
-  hud.setBackend(webgpu ? 'WEBGPU' : 'WEBGL2');
+  hud.setBackend('WEBGPU');
   hud.log('TAC-FEED 04 ONLINE');
   hud.setPhase(0);
 
@@ -228,7 +215,7 @@ async function boot() {
     portalLight.intensity = 30 + U.breach.value * 700 + Math.sin(t * 7.3) * 8 * U.breach.value;
     fireLight.intensity = U.inferno.value * 420 * (0.8 + Math.sin(t * 9.7) * 0.2);
 
-    if (webgpu && embers.updateKernel) renderer.compute(embers.updateKernel);
+    if (embers.updateKernel) renderer.compute(embers.updateKernel);
     if (skip.has('post')) renderer.render(scene, camera); else post.render();
 
     if ((frame & 7) === 0) hud.tick(t);
