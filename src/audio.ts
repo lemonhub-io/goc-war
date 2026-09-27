@@ -223,11 +223,22 @@ export function createSynth(): Synth {
     n.start(t0);
   }
 
+  let lastResume = 0;
+
   /** drive the ambient layers from the shared scene uniforms */
   function update(dt: number) {
     if (!ctx || !_enabled) return;
-    // if the context got suspended (tab switch, policy), keep retrying resume
-    if (ctx.state === 'suspended') { ctx.resume().catch(() => {}); return; }
+    // 'interrupted' (iOS/Safari) and 'suspended' both need resume() — keep
+    // retrying (throttled) until the context actually runs again
+    if (ctx.state !== 'running') {
+      dset('audio', `on ctx=${ctx.state} (retrying)`);
+      // wall clock — ctx.currentTime doesn't advance while non-running
+      if (performance.now() - lastResume > 600) {
+        lastResume = performance.now();
+        ctx.resume().catch(() => {});
+      }
+      return;
+    }
     dset('audio', `on ctx=${ctx.state}`);
     const t0 = ctx.currentTime;
     const set = (g: GainNode | null, v: number) => g?.gain.setTargetAtTime(v, t0, 0.25);
@@ -247,7 +258,10 @@ export function createSynth(): Synth {
     get enabled() { return _enabled; },
     toggle() {
       ensure();
-      ctx!.resume();
+      ctx!.resume().catch(() => {});
+      // iOS can report 'interrupted' and need resume() again after the
+      // state settles — the update() retry loop covers that
+      ctx!.onstatechange = () => dset('audio', `${_enabled ? 'on' : 'off'} ctx=${ctx!.state}`);
       _enabled = !_enabled;
       if (master) master.gain.linearRampToValueAtTime(_enabled ? 0.42 : 0, ctx!.currentTime + 0.4);
       return _enabled;
