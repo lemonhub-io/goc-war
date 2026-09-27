@@ -1,5 +1,9 @@
 // main.ts — boot, WebGPU renderer init, scene assembly, quality governor, loop
 import * as THREE from 'three/webgpu';
+import {
+  installDiagHooks, createDiagPanel, showDiag, dlog, dset,
+  diagAdapterInfo, diagFrame, armWatchdog,
+} from './diag';
 import { buildShelves, buildFloor, buildBooks } from './library';
 import { buildPortal } from './portal';
 import { buildDust, buildEmbers, buildFlames, buildSmoke, buildPageVortex } from './particles';
@@ -9,6 +13,8 @@ import { Director } from './director';
 import { createHud } from './hud';
 import { createSynth } from './audio';
 import { U, PORTAL, makeEmblemSVG } from './shared';
+
+installDiagHooks();
 
 const BOOT_LINES = [
   'UNGOC TACNET v6.4 // SECURE UPLINK',
@@ -35,18 +41,23 @@ function fatal(msg: string) {
   f.hidden = false;
   f.querySelector('.fatal-msg')!.textContent = msg;
   document.getElementById('boot')!.style.display = 'none';
+  dlog('FATAL', msg);
+  showDiag();
 }
 
 async function initRenderer(canvas: HTMLCanvasElement): Promise<THREE.WebGPURenderer | null> {
   // WebGPU only — no WebGL fallback
-  if (!('gpu' in navigator)) return null;
+  if (!('gpu' in navigator)) { dlog('INIT', 'navigator.gpu absent'); return null; }
   try {
     const r = new THREE.WebGPURenderer({
       canvas, antialias: false, powerPreference: 'high-performance',
     });
     await r.init();
-    return (r.backend as any).isWebGPUBackend ? r : null;
-  } catch {
+    if (!(r.backend as any).isWebGPUBackend) { dlog('INIT', 'renderer init fell through to non-WebGPU backend'); return null; }
+    dlog('INIT', 'WebGPU renderer up');
+    return r;
+  } catch (e: any) {
+    dlog('INIT', `renderer init threw: ${e?.message ?? e}`);
     return null;
   }
 }
@@ -62,6 +73,7 @@ function softwareAdapter(renderer: THREE.WebGPURenderer): boolean {
 
 async function boot() {
   document.getElementById('load')?.remove();
+  createDiagPanel();
   const bootDone = typeBoot();
   const canvas = document.getElementById('scene') as HTMLCanvasElement;
 
@@ -73,10 +85,15 @@ async function boot() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
   renderer.setSize(innerWidth, innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  diagAdapterInfo((renderer.backend as any).adapter?.info);
+  armWatchdog();
 
   // if the WebGPU device is lost (driver crash / GPU timeout), fail visibly
   (renderer.backend as any).device?.lost?.then((info: any) => {
-    if (info?.reason !== 'destroyed') fatal('WEBGPU DEVICE LOST — reload the page to retry.');
+    if (info?.reason !== 'destroyed') {
+      dlog('DEVICE', `lost: ${info?.reason} ${info?.message ?? ''}`);
+      fatal('WEBGPU DEVICE LOST — reload the page to retry.');
+    }
   });
 
   // ---------------------------------------------------------------- scene
@@ -185,6 +202,7 @@ async function boot() {
     for (const s of scalable) (s as any).count = Math.max(64, Math.floor(s.userData.baseCount * qLevel.q));
     U.puffScale.value = qLevel.puff;
     post = qLevel.lite ? postLite : postFull;
+    dset('quality', `${autoQ ? 'AUTO·' : ''}${qLevel.name}`);
     hud.setPerf(`${autoQ ? 'AUTO·' : ''}${qLevel.name}`);
   };
   applyQuality();
@@ -237,7 +255,14 @@ async function boot() {
     fireLight.intensity = U.inferno.value * 420 * (0.8 + Math.sin(t * 9.7) * 0.2);
 
     if (embers.updateKernel) renderer.compute(embers.updateKernel);
-    if (skip.has('post')) renderer.render(scene, camera); else post.render();
+    try {
+      if (skip.has('post')) renderer.render(scene, camera); else post.render();
+      diagFrame();
+    } catch (e: any) {
+      // pipeline build failures land here on some drivers — surface once
+      if ((frame & 63) === 0) dlog('RENDER', e?.stack || e?.message || String(e));
+      if (frame === 0) showDiag('first frame threw');
+    }
 
     if ((frame & 7) === 0) hud.tick(t);
     frame++;

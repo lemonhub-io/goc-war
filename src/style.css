@@ -247,6 +247,54 @@ body.alerted .top .cell { border-color: rgba(255, 59, 48, 0.6); }
 #audio-toggle:hover { color: var(--ink); border-color: var(--line-hi); }
 #audio-toggle:focus-visible { outline: 1px solid var(--blue); outline-offset: 2px; }
 
+#diag-toggle {
+  position: fixed; right: 26px; bottom: 196px; z-index: 45;
+  background: var(--panel); color: var(--dim);
+  border: 1px solid var(--line);
+  font: inherit; font-size: 9.5px; letter-spacing: 0.14em;
+  padding: 7px 12px; cursor: pointer;
+}
+#diag-toggle:hover { color: var(--ink); border-color: var(--line-hi); }
+#diag-toggle:focus-visible { outline: 1px solid var(--blue); outline-offset: 2px; }
+
+/* ------------------------------------------------- diagnostics */
+
+#diag {
+  position: fixed; inset: 0; z-index: 80;
+  background: rgba(2, 3, 8, 0.92);
+  display: flex; align-items: center; justify-content: center;
+}
+#diag[hidden] { display: none; }
+
+.diag-box {
+  width: min(760px, 92vw); max-height: 84vh;
+  border: 1px solid var(--red);
+  background: var(--panel);
+  display: flex; flex-direction: column;
+  padding: 20px 22px;
+}
+.diag-h { display: flex; justify-content: space-between; align-items: baseline; gap: 14px; }
+.diag-h b { color: var(--red); font-size: 12px; letter-spacing: 0.25em; }
+.diag-h span { color: var(--dim); font-size: 9.5px; letter-spacing: 0.08em; }
+.diag-pre {
+  margin: 14px 0; padding: 12px;
+  border: 1px solid var(--line);
+  color: var(--ink); font-size: 10px; line-height: 1.6;
+  overflow: auto; flex: 1; min-height: 200px;
+  white-space: pre-wrap; word-break: break-all;
+  user-select: text;
+}
+.diag-btns { display: flex; gap: 10px; justify-content: flex-end; }
+.diag-btns button {
+  background: transparent; color: var(--ink);
+  border: 1px solid var(--line-hi);
+  font: inherit; font-size: 10px; letter-spacing: 0.18em;
+  padding: 9px 20px; cursor: pointer;
+}
+.diag-btns button:hover { border-color: var(--blue); color: var(--blue); }
+.diag-btns #diag-copy { border-color: var(--red); color: var(--red); }
+.diag-btns #diag-copy:hover { background: var(--red); color: #020308; }
+
 /* ------------------------------------------------- boot / fatal */
 
 #boot, #fatal {
@@ -294,4 +342,5 @@ body.alerted .top .cell { border-color: rgba(255, 59, 48, 0.6); }
   .log { width: 45vw; }
   .op-title h1 { font-size: clamp(34px, 11vw, 64px); }
   #audio-toggle { top: auto; bottom: 26px; right: 26px; margin-top: 0; }
+  #diag-toggle { bottom: 66px; right: 26px; }
 }
