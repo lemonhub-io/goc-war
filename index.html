@@ -7,9 +7,31 @@
   <link rel="preconnect" href="https://fonts.googleapis.com" />
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;700;800&family=Noto+Sans+SC:wght@700;900&family=Archivo+Black&display=swap" rel="stylesheet" />
+  <style>
+    /* critical: never show a white flash before assets/JS arrive */
+    html, body { margin: 0; background: #020308; height: 100%; }
+    #load {
+      position: fixed; inset: 0; z-index: 9999; display: flex;
+      flex-direction: column; align-items: center; justify-content: center;
+      gap: 18px; background: #020308; color: #cfd8e3;
+      font: 11px/1.6 ui-monospace, monospace; letter-spacing: 0.35em;
+    }
+    #load .ld-bar { width: 220px; height: 2px; background: #14202e; overflow: hidden; }
+    #load .ld-bar i {
+      display: block; width: 40%; height: 100%; background: #e0413d;
+      animation: ld-sweep 1.1s ease-in-out infinite;
+    }
+    @keyframes ld-sweep { 0% { transform: translateX(-100%); } 100% { transform: translateX(320%); } }
+    #load .ld-sub { color: #54627a; letter-spacing: 0.2em; font-size: 9px; }
+  </style>
   <link rel="stylesheet" href="/src/style.css" />
 </head>
 <body>
+  <div id="load">
+    <span>TAC-FEED 04 // ESTABLISHING UPLINK</span>
+    <div class="ld-bar"><i></i></div>
+    <span class="ld-sub">UN·GOC PHYSICS DIVISION — SECURE CHANNEL</span>
+  </div>
   <canvas id="scene"></canvas>
   <div id="scanlines" aria-hidden="true"></div>
   <div id="alert" aria-hidden="true"></div>

@@ -61,6 +61,7 @@ function softwareAdapter(renderer: THREE.WebGPURenderer): boolean {
 }
 
 async function boot() {
+  document.getElementById('load')?.remove();
   const bootDone = typeBoot();
   const canvas = document.getElementById('scene') as HTMLCanvasElement;
 
