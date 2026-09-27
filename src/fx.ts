@@ -1,23 +1,26 @@
 // fx.ts — post chain: HDR bloom + impact-driven chromatic aberration +
-// vignette, film grain, faint scanline weave
+// vignette, film grain, faint scanline weave.
+// `lite` tier: weaker bloom, no chromatic aberration — roughly halves the
+// per-pixel post cost on weak GPUs while keeping the signature glow.
 import * as THREE from 'three/webgpu';
 import { Fn, vec3, vec4, pass, screenUV, hash, smoothstep, sin } from 'three/tsl';
 import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { chromaticAberration } from 'three/addons/tsl/display/ChromaticAberrationNode.js';
 import { U } from './shared';
 
-export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera): THREE.PostProcessing {
+export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, lite = false): THREE.PostProcessing {
   const post = new THREE.PostProcessing(renderer);
   const scenePass = pass(scene, camera);
   const sceneColor = scenePass.getTextureNode();
 
-  const bloomed = sceneColor.add(bloom(sceneColor as any, 0.85, 0.62, 0.02) as any);
-  const aberrated: any = chromaticAberration(bloomed as any, U.caBoost.mul(0.55).add(0.06) as any, null as any, 1.05 as any) as any;
+  const bloomed = sceneColor.add(bloom(sceneColor as any, lite ? 0.55 : 0.85, 0.62, 0.02) as any);
+  const c: any = lite
+    ? bloomed
+    : chromaticAberration(bloomed as any, U.caBoost.mul(0.55).add(0.06) as any, null as any, 1.05 as any);
 
   post.outputNode = Fn(() => {
     const p = screenUV.sub(0.5);
     const r = p.length();
-    const c = aberrated;
 
     // vignette
     const vig = smoothstep(0.95, 0.32, r.mul(1.35));

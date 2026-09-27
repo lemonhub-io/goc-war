@@ -262,7 +262,7 @@ export function buildFlames(): THREE.Sprite {
   mat.rotationNode = Fn(() => sin(U.time.mul(1.9).add(fd.w.mul(40))).mul(0.35))();
   mat.scaleNode = Fn(() => {
     const age = fract(U.time.mul(0.9).add(fd.w.mul(9.3)));
-    const w = mix(float(0.5).add(fd.w.mul(0.7)), 0.08, age);
+    const w = mix(float(0.5).add(fd.w.mul(0.7)), 0.08, age).mul(U.puffScale);
     return vec2(w, w.mul(2.1));
   })();
   mat.colorNode = Fn(() => {
@@ -309,7 +309,7 @@ export function buildSmoke(): THREE.Sprite {
   mat.rotationNode = Fn(() => U.time.mul(0.12).mul(sd.w.sub(0.5)).add(sd.w.mul(9)))();
   mat.scaleNode = Fn(() => {
     const cyc = fract(U.time.mul(0.09).add(sd.w.mul(3.7)));
-    const s = mix(float(1.6).add(sd.w.mul(2.0)), 7.0, cyc);
+    const s = mix(float(1.6).add(sd.w.mul(2.0)), 7.0, cyc).mul(U.puffScale);
     return vec2(s, s);
   })();
   mat.colorNode = Fn(() => {

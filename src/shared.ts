@@ -24,6 +24,8 @@ export const U = {
   flash: uniform(0),
   /** chromatic aberration boost on impacts */
   caBoost: uniform(0),
+  /** live fill-rate dial — shrinks big soft sprites (smoke/flames) on low tiers */
+  puffScale: uniform(1),
   /** global exposure lift during breach */
   exposure: uniform(1),
   /** last 4 impact events: xyz pos + w = start time */

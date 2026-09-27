@@ -1,4 +1,4 @@
-// main.ts — boot, renderer init (WebGPU w/ WebGL2 fallback), scene assembly, loop
+// main.ts — boot, WebGPU renderer init, scene assembly, quality governor, loop
 import * as THREE from 'three/webgpu';
 import { buildShelves, buildFloor, buildBooks } from './library';
 import { buildPortal } from './portal';
@@ -126,7 +126,10 @@ async function boot() {
   add('bursts', combat.bursts);
   add('rings', combat.rings);
 
-  const post = buildPost(renderer, scene, camera);
+  // two precompiled post chains — swapping pipelines is a pointer change,
+  // so quality transitions never recompile shaders mid-run
+  const postFull = buildPost(renderer, scene, camera, false);
+  const postLite = buildPost(renderer, scene, camera, true);
   const director = new Director(combat, hud);
 
   document.getElementById('emblem-slot')!.innerHTML = makeEmblemSVG();
@@ -142,31 +145,46 @@ async function boot() {
   });
 
   // ---------------------------------------------------------------- perf governor
-  // Fill-rate is the dominant cost (big additive sprites + bloom). Scale DPR and
-  // the drawn fraction of each instanced particle system — both are live, free
-  // to change, and degrade gracefully.
+  // Fill-rate is the dominant cost (big additive sprites + post chain). Per
+  // level we scale: drawn particle fraction, framebuffer pixel budget,
+  // soft-sprite footprint, and post complexity — all live, no rebuilds.
   const params = new URLSearchParams(location.search);
   const forcedQ = params.get('q');                 // ?q=high|med|low|potato
   const softGPU = softwareAdapter(renderer);
+  const mobileUA = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
+  const weakHW = (navigator.hardwareConcurrency ?? 8) <= 4
+    || ((navigator as any).deviceMemory ?? 8) <= 4;
   const LEVELS = [
-    { name: 'HIGH',   q: 1.0,  dpr: Math.min(devicePixelRatio, 1.6) },
-    { name: 'MED',    q: 0.7,  dpr: Math.min(devicePixelRatio, 1.2) },
-    { name: 'LOW',    q: 0.5,  dpr: 1.0 },
-    { name: 'POTATO', q: 0.35, dpr: 0.8 },
+    { name: 'HIGH',   q: 1.0,  px: 4.2e6, dprCap: 1.6,  lite: false, puff: 1.0 },
+    { name: 'MED',    q: 0.7,  px: 2.6e6, dprCap: 1.25, lite: false, puff: 1.0 },
+    { name: 'LOW',    q: 0.5,  px: 1.6e6, dprCap: 1.0,  lite: true,  puff: 0.85 },
+    { name: 'POTATO', q: 0.32, px: 1.0e6, dprCap: 0.72, lite: true,  puff: 0.7 },
   ];
-  let levelIdx = params.has('lite') || softGPU ? 2 : 0;
-  if (forcedQ) levelIdx = Math.max(0, LEVELS.findIndex((l) => l.name === forcedQ.toUpperCase()));
+  let levelIdx = softGPU ? 3 : params.has('lite') ? 2 : mobileUA || weakHW ? 1 : 0;
+  if (forcedQ) {
+    const fi = LEVELS.findIndex((l) => l.name === forcedQ.toUpperCase());
+    if (fi >= 0) levelIdx = fi;
+  }
   const autoQ = !forcedQ;
   let qLevel = LEVELS[levelIdx];
+  let post = postFull;
   let fpsEma = 60;
   let lastQChange = 0;
   let upStreak = 0;
 
   const applyQuality = () => {
     qLevel = LEVELS[levelIdx];
-    renderer.setPixelRatio(qLevel.dpr);
+    // cap total framebuffer pixels — on 4K/retina screens raw dpr is the
+    // single biggest cost driver, so budget first, dpr-cap second
+    const dpr = Math.min(
+      devicePixelRatio, qLevel.dprCap,
+      Math.sqrt(qLevel.px / (innerWidth * innerHeight)),
+    );
+    renderer.setPixelRatio(dpr);
     renderer.setSize(innerWidth, innerHeight);
     for (const s of scalable) (s as any).count = Math.max(64, Math.floor(s.userData.baseCount * qLevel.q));
+    U.puffScale.value = qLevel.puff;
+    post = qLevel.lite ? postLite : postFull;
     hud.setPerf(`${autoQ ? 'AUTO·' : ''}${qLevel.name}`);
   };
   applyQuality();
@@ -174,7 +192,7 @@ async function boot() {
   addEventListener('resize', () => {
     camera.aspect = innerWidth / innerHeight;
     camera.updateProjectionMatrix();
-    renderer.setSize(innerWidth, innerHeight);
+    applyQuality();
   });
 
   // ---------------------------------------------------------------- reveal
@@ -197,7 +215,8 @@ async function boot() {
     last = now;
     t += dt;
 
-    // fps governor — down fast, up slow
+    // fps governor — down fast, up slow; badge shows live fps so the user
+    // can see the governor working
     if (dt > 0) {
       fpsEma = fpsEma * 0.94 + (1 / dt) * 0.06;
       if (autoQ && t > 5 && t - lastQChange > 2.0) {
@@ -207,6 +226,7 @@ async function boot() {
           if (++upStreak > 240) { levelIdx--; applyQuality(); lastQChange = t; upStreak = 0; }
         } else upStreak = 0;
       }
+      if ((frame & 31) === 0) hud.setPerf(`${autoQ ? 'AUTO·' : ''}${qLevel.name} ${Math.round(fpsEma)}FPS`);
     }
 
     director.update(t, dt, camera);
