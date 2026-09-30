@@ -438,3 +438,49 @@ export function buildPageVortex(): { clean: THREE.Sprite; burning: THREE.Sprite 
 
   return { clean, burning };
 }
+
+// =================================================================== ASH
+
+const ASH_COUNT = LITE ? 3500 : 7000;
+
+/** ashfall — charred flakes sifting down through the hall once the Way
+ *  collapses; a few still glow. Density is gated by U.ash. */
+export function buildAsh(): THREE.Sprite {
+  const seeds = new Float32Array(ASH_COUNT * 4);
+  for (let i = 0; i < ASH_COUNT; i++) {
+    seeds[i * 4] = (Math.random() - 0.5) * 72;
+    seeds[i * 4 + 1] = Math.random();               // phase along the fall
+    seeds[i * 4 + 2] = -42 + Math.random() * 62;
+    seeds[i * 4 + 3] = Math.random();
+  }
+  const sd = attr(new THREE.InstancedBufferAttribute(seeds, 4));
+  const mat = new THREE.SpriteNodeMaterial({
+    transparent: true, depthWrite: false, blending: THREE.NormalBlending,
+  });
+  const cyc = () => fract(sd.y.add(U.time.mul(sd.w.mul(0.018).add(0.02))));
+  mat.positionNode = Fn(() => {
+    const c = cyc();
+    const s = sd.w;
+    return vec3(
+      sd.x.add(sin(U.time.mul(0.5).add(s.mul(40))).mul(1.8)).add(c.mul(-3.0)),
+      c.oneMinus().mul(30.0),
+      sd.z.add(cos(U.time.mul(0.4).add(s.mul(23))).mul(1.6)),
+    );
+  })();
+  mat.rotationNode = Fn(() => U.time.mul(sd.w.sub(0.5).mul(2.4)).add(sd.w.mul(20)))();
+  mat.scaleNode = Fn(() => {
+    const s = sd.w.mul(0.09).add(0.05);
+    return vec2(s, s.mul(0.75));
+  })();
+  mat.colorNode = Fn(() => {
+    const d = uv().sub(0.5).length();
+    const shape = smoothstep(0.5, 0.3, d);
+    const glowing = select(sd.w.greaterThan(0.94), float(1), float(0));
+    const ember = vec3(1.0, 0.42, 0.12).mul(glowing.mul(3.0).mul(smoothstep(0.0, 0.7, cyc().oneMinus())));
+    const grey = vec3(0.17, 0.16, 0.16).add(vec3(0.5, 0.2, 0.06).mul(U.inferno.mul(0.25)));
+    const col = mix(grey, ember, glowing);
+    const a = shape.mul(U.ash).mul(smoothstep(0.0, 0.06, cyc())).mul(smoothstep(1.0, 0.94, cyc())).mul(0.85);
+    return vec4(col, a);
+  })();
+  return spriteCloud(mat, ASH_COUNT, 16);
+}

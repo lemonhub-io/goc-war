@@ -21,6 +21,9 @@ export const attr = (a: THREE.InstancedBufferAttribute | THREE.BufferAttribute):
  *  params are typed `Scalar` (vec3()/math fns reject untyped members) */
 export const asScalar = (n: TslField): Node<'float'> => n as unknown as Node<'float'>;
 
+export const SCAR_COUNT = 12;
+export const SHOCK_COUNT = 6;
+
 // ---------------------------------------------------------------- uniforms
 
 export const U = {
@@ -49,7 +52,37 @@ export const U = {
     new THREE.Vector4(0, -999, 0, -999),
     new THREE.Vector4(0, -999, 0, -999),
   ]),
+  /** 0..1 — floor sigil draw-on progress */
+  sigil: uniform(0),
+  /** 0..1 — the Way collapsing after the finisher (scales the aperture down) */
+  collapse: uniform(0),
+  /** 0..1 — falling ash density */
+  ash: uniform(0),
+  /** 0..1 — visibility of the floor scars (fades out with the loop) */
+  scarFade: uniform(1),
+  /** viewport aspect (w/h) — post shockwaves are aspect-corrected */
+  aspect: uniform(16 / 9),
+  /** 0..1 — crepuscular streak strength from the Way */
+  rays: uniform(0),
+  /** Way centre in screen uv (y down, WebGPU convention) */
+  portalUv: uniform(new THREE.Vector2(0.5, 0.4)),
+  /** floor scars from pillar strikes: x,z = pos, z-comp = size, w = start time */
+  scars: uniformArray(Array.from({ length: SCAR_COUNT }, () => new THREE.Vector4(0, 0, 1, -999))),
+  /** live screen-space shockwaves: xy = centre uv, z = age 0..1 (>=1 dead), w = signed strength */
+  shocks: uniformArray(Array.from({ length: SHOCK_COUNT }, () => new THREE.Vector4(0.5, 0.5, 2, 0))),
 };
+
+let scarCursor = 0;
+/** burn a scorch-and-crack scar into the floor at (x,z) */
+export function pushScar(x: number, z: number, size: number, t: number) {
+  const v = U.scars.array[scarCursor % SCAR_COUNT] as THREE.Vector4;
+  v.set(x, z, size, t);
+  scarCursor++;
+}
+export function clearScars() {
+  for (const v of U.scars.array as THREE.Vector4[]) v.set(0, 0, 1, -999);
+  scarCursor = 0;
+}
 
 let impactCursor = 0;
 export function pushImpact(p: THREE.Vector3, t: number) {

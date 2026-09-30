@@ -11,6 +11,9 @@ export interface Synth {
   boom(v: number): void;
   breachRiser(): void;
   lanceFire(): void;
+  pillarCharge(): void;
+  pillarSlam(v: number): void;
+  convergenceRiser(): void;
   klaxon(): void;
   blip(): void;
   update(dt: number): void;
@@ -172,6 +175,85 @@ export function createSynth(): Synth {
     n.start(t0);
   }
 
+  /** designator lock — rising whine that resolves just before the pillar lands */
+  function pillarCharge() {
+    if (!ctx || !master || !_enabled) return;
+    const t0 = ctx.currentTime;
+    const o = ctx.createOscillator();
+    o.type = 'sawtooth';
+    o.frequency.setValueAtTime(180, t0);
+    o.frequency.exponentialRampToValueAtTime(1900, t0 + 0.88);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 6;
+    bp.frequency.setValueAtTime(400, t0);
+    bp.frequency.exponentialRampToValueAtTime(3600, t0 + 0.88);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.exponentialRampToValueAtTime(0.11, t0 + 0.84);
+    g.gain.linearRampToValueAtTime(0.0001, t0 + 0.92);
+    o.connect(bp).connect(g).connect(master);
+    o.start(t0); o.stop(t0 + 0.95);
+  }
+
+  /** pillar impact — cracking transient over a long sub-bass decay */
+  function pillarSlam(v: number) {
+    if (!ctx || !master || !_enabled) return;
+    const t0 = ctx.currentTime;
+    const sub = ctx.createOscillator();
+    sub.type = 'sine';
+    sub.frequency.setValueAtTime(64, t0);
+    sub.frequency.exponentialRampToValueAtTime(24, t0 + 1.5);
+    const sg = ctx.createGain();
+    sg.gain.setValueAtTime(0.75 * Math.min(1.5, v), t0);
+    sg.gain.exponentialRampToValueAtTime(0.001, t0 + 1.7);
+    sub.connect(sg).connect(master);
+    sub.start(t0); sub.stop(t0 + 1.8);
+    // the crack: bright noise snap with a fast filter sweep
+    const n = ctx.createBufferSource();
+    n.buffer = noiseBuffer(0.9, 2.2);
+    const lp = ctx.createBiquadFilter();
+    lp.type = 'lowpass';
+    lp.frequency.setValueAtTime(9000, t0);
+    lp.frequency.exponentialRampToValueAtTime(260, t0 + 0.8);
+    const ng = ctx.createGain();
+    ng.gain.setValueAtTime(0.55 * Math.min(1.5, v), t0);
+    ng.gain.exponentialRampToValueAtTime(0.001, t0 + 0.85);
+    n.connect(lp).connect(ng).connect(master);
+    n.start(t0);
+    // electric ring-out
+    const z = ctx.createOscillator();
+    z.type = 'square';
+    z.frequency.setValueAtTime(2400, t0);
+    z.frequency.exponentialRampToValueAtTime(90, t0 + 0.4);
+    const zg = ctx.createGain();
+    zg.gain.setValueAtTime(0.06, t0);
+    zg.gain.exponentialRampToValueAtTime(0.001, t0 + 0.42);
+    z.connect(zg).connect(master);
+    z.start(t0); z.stop(t0 + 0.45);
+  }
+
+  /** the long swell into the finisher */
+  function convergenceRiser() {
+    if (!ctx || !master || !_enabled) return;
+    const t0 = ctx.currentTime;
+    for (const [f0, f1, gv] of [[55, 440, 0.2], [82, 880, 0.12]] as const) {
+      const o = ctx.createOscillator();
+      o.type = 'sawtooth';
+      o.frequency.setValueAtTime(f0, t0);
+      o.frequency.exponentialRampToValueAtTime(f1, t0 + 2.4);
+      const lp = ctx.createBiquadFilter();
+      lp.type = 'lowpass';
+      lp.frequency.setValueAtTime(200, t0);
+      lp.frequency.exponentialRampToValueAtTime(5200, t0 + 2.4);
+      const g = ctx.createGain();
+      g.gain.setValueAtTime(0.0001, t0);
+      g.gain.exponentialRampToValueAtTime(gv, t0 + 2.3);
+      g.gain.linearRampToValueAtTime(0.0001, t0 + 2.55);
+      o.connect(lp).connect(g).connect(master);
+      o.start(t0); o.stop(t0 + 2.6);
+    }
+  }
+
   /** two-tone alert — plays when the STRIKE phase opens */
   function klaxon() {
     if (!ctx || !master || !_enabled) return;
@@ -266,6 +348,6 @@ export function createSynth(): Synth {
       if (master) master.gain.linearRampToValueAtTime(_enabled ? 0.42 : 0, ctx!.currentTime + 0.4);
       return _enabled;
     },
-    boom, breachRiser, lanceFire, klaxon, blip, update,
+    boom, breachRiser, lanceFire, pillarCharge, pillarSlam, convergenceRiser, klaxon, blip, update,
   };
 }

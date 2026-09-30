@@ -1,0 +1,45 @@
+initialize:
+  - run: |
+      # Rust WASM toolchain: wasm32 target on stable (wasm-simd pkg)
+      # + nightly with rust-src for -Z build-std atomics build (wasm-mt pkg)
+      rustup target add wasm32-unknown-unknown
+      rustup toolchain install nightly --profile minimal --component rust-src --target wasm32-unknown-unknown
+      # wasm-pack prebuilt binary (also fetches the wasm-bindgen CLI used for wasm-mt)
+      curl -sSf https://rustwasm.github.io/wasm-pack/installer/init.sh | sh
+  - run: |
+      npm ci
+      # headless chromium for shot.mjs frame captures (playwright-core devDep)
+      npx playwright-core install chromium
+      # warm cargo registry + wasm-bindgen cache so later wasm rebuilds are fast;
+      # public/ outputs are committed, so restore them to keep the tree clean
+      bash wasm/build.sh && git checkout -- public/
+
+maintenance:
+  - run: |
+      npm ci
+
+knowledge:
+  - name: lint
+    contents: |
+      npx tsc --noEmit   # the typecheck half of `npm run build`
+  - name: test
+    contents: |
+      npm run build        # tsc --noEmit && vite build; no unit test suite exists
+      npm run build:wasm   # rebuilds public/wasm-simd + public/wasm-mt (only needed after editing wasm/src)
+  - name: startup
+    contents: |
+      npm run dev          # vite dev server → http://127.0.0.1:5173
+      npm run build && npm run preview   # production build preview
+  - name: screenshots
+    contents: |
+      # capture animation frames headlessly (SwiftShader WebGPU):
+      npm run dev -- --port 5199 &
+      CHROME=$HOME/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome \
+        URL=http://127.0.0.1:5199/ TIMES=3500,12000 OUT=/tmp/shots node shot.mjs
+  - name: wasm-notes
+    contents: |
+      public/wasm-simd and public/wasm-mt are committed build outputs — the app
+      builds and runs without Rust. Rebuild via `npm run build:wasm` after editing
+      wasm/src. Requires the wasm32 target (stable + nightly w/ rust-src) and
+      wasm-pack, all installed at initialize. wasm-mt additionally needs
+      cross-origin isolation (COOP/COEP headers) at runtime.

@@ -1,10 +1,10 @@
 // library.ts — the Wanderers' Library: shelf monoliths, floor, levitating books
 import * as THREE from 'three/webgpu';
 import {
-  Fn, vec2, vec3, vec4, hash, mix, smoothstep, abs, fract,
-  floor, positionWorld, positionLocal, instanceIndex,
+  Fn, vec2, vec3, vec4, float, hash, mix, smoothstep, abs, fract,
+  floor, positionWorld, positionLocal, instanceIndex, exp, mx_noise_float,
 } from 'three/tsl';
-import { U, PORTAL } from './shared';
+import { U, PORTAL, SCAR_COUNT, field, TslField } from './shared';
 import { loadBooksWasm, type BooksWasm } from './wasm';
 
 // ------------------------------------------------------------------ shelves
@@ -86,6 +86,36 @@ export function buildFloor(): THREE.Mesh {
     roughness: 0.55,
     metalness: 0.35,
   });
+  // pillar-strike scars: a charred crater, fracture lines that crawl outward and
+  // glow molten, then cool — packed as vec4(emissive rgb, char mask)
+  const scarField = Fn(() => {
+    const p = positionWorld;
+    const n = mx_noise_float(vec3(p.x.mul(0.85), p.z.mul(0.85), 1.7));
+    const crackLine = smoothstep(0.07, 0.0, abs(n));
+    let glow: TslField = vec3(0.0, 0.0, 0.0);
+    let charM: TslField = float(0.0);
+    for (let k = 0; k < SCAR_COUNT; k++) {
+      const sc = field(U.scars.element(k));
+      const age = U.time.sub(sc.w);
+      const live = smoothstep(0.0, 0.03, age);
+      const d = vec2(p.x.sub(sc.x), p.z.sub(sc.y)).length();
+      const grow = float(1.0).sub(exp(age.mul(-3.0)));
+      const R = sc.z.mul(grow.mul(0.7).add(1.0));
+      const charK = smoothstep(R, R.mul(0.3), d).mul(live).mul(exp(age.mul(-0.018)));
+      const reach = R.mul(float(1.0).sub(exp(age.mul(-5.0))).mul(2.6).add(0.6));
+      const cracks = crackLine.mul(smoothstep(reach, reach.mul(0.35), d)).mul(live);
+      const heat = exp(age.mul(-0.32));
+      const flash = exp(d.div(sc.z).mul(-1.6)).mul(exp(age.mul(-2.4))).mul(live);
+      glow = field(glow)
+        .add(vec3(1.0, 0.42, 0.1).mul(cracks.mul(heat).mul(3.2)))
+        .add(vec3(1.0, 0.55, 0.2).mul(charK.mul(heat).mul(0.35)))
+        .add(vec3(0.7, 0.85, 1.0).mul(flash.mul(4.0)));
+      charM = field(charM).max(charK);
+    }
+    return vec4(field(glow).mul(U.scarFade), field(charM).mul(U.scarFade));
+  })();
+  mat.emissiveNode = scarField.xyz;
+
   mat.colorNode = Fn(() => {
     const p = positionWorld;
     // stone tile seams
@@ -99,7 +129,7 @@ export function buildFloor(): THREE.Mesh {
     // hot wash spreading with the fires
     const fd = vec2(p.x, p.z.add(9.0)).length();
     const warm = vec3(0.85, 0.3, 0.06).mul(U.inferno.mul(0.4)).mul(smoothstep(24.0, 3.0, fd));
-    return vec4(base.add(pool).add(warm), 1.0);
+    return vec4(base.add(pool).add(warm).mul(scarField.w.mul(0.88).oneMinus()), 1.0);
   })();
   const mesh = new THREE.Mesh(geo, mat);
   mesh.rotation.x = -Math.PI / 2;

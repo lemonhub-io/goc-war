@@ -1,22 +1,43 @@
 // director.ts — the strike timeline: phases, camera rig, shake, event schedule
+//
+//  0.0 ─ 9.4   APPROACH   quiet hall; the floor seal inscribes itself
+//  9.4 ─ 15.0  BREACH     the Way tears open (shockwave + flash)
+// 15.0 ─ 33.2  STRIKE     designated pillars → carpet barrage → CONVERGENCE:
+//                         ring of eight, then the finisher on the aperture
+// 33.2 ─ 44.0  ASHFALL    the Way collapses inward, ash sifts down, feed loops
 import * as THREE from 'three/webgpu';
-import { U } from './shared';
+import { U, PORTAL } from './shared';
 import type { Combat } from './combat';
+import type { Strike } from './strike';
 import type { Hud } from './hud';
 import type { Synth } from './audio';
 
 export const LOOP = 44;
 
 // phase boundaries within the loop
+const T_SIGIL_START = 1.0;
+const T_SIGIL_DONE = 8.4;
 const T_BREACH_HIT = 9.4;
 const T_BREACH_DONE = 15.0;
-const T_STRIKE_END = 33.0;
+const T_STRIKE_END = 33.2;
 const T_END = LOOP;
 
 // volleys fire in burst groups — tighter triplets with breathing gaps
-// instead of a metronome cadence
-const VOLLEYS = [16.3, 16.8, 17.4, 20.2, 20.8, 21.4, 25.8, 26.5, 29.8, 30.4];
-const T_SALVO = 32.4;
+// instead of a metronome cadence. Each one is a pillar (x, z, scale) plus
+// supporting MK-IV lances.
+const VOLLEYS: { t: number; x: number; z: number; s: number }[] = [
+  { t: 16.3, x: -7.0, z: -12.0, s: 0.85 },
+  { t: 16.9, x: 8.0, z: -16.5, s: 0.85 },
+  { t: 17.5, x: -11.5, z: -6.5, s: 0.9 },
+  { t: 20.0, x: 3.5, z: -9.0, s: 1.0 },
+  { t: 20.7, x: -4.5, z: -20.0, s: 1.0 },
+  { t: 21.4, x: 10.5, z: -6.0, s: 1.05 },
+  { t: 23.4, x: -9.5, z: -19.0, s: 1.1 },
+  { t: 24.1, x: 6.5, z: -21.5, s: 1.15 },
+  { t: 28.6, x: -1.5, z: -5.5, s: 1.2 },
+];
+const T_BARRAGE = 25.5;
+const T_CONVERGE = 30.4;
 
 function seg(t: number, a: number, b: number): number {
   const x = Math.max(0, Math.min(1, (t - a) / (b - a)));
@@ -25,6 +46,7 @@ function seg(t: number, a: number, b: number): number {
 
 export class Director {
   private combat: Combat;
+  private strike: Strike;
   private hud: Hud;
   private audio: Synth;
   private camPosSm = new THREE.Vector3(0, 4.6, 26);
@@ -40,12 +62,18 @@ export class Director {
   private lastPhase = -1;
   private breachFired = false;
   private breachDoneFired = false;
-  private salvoFired = false;
+  private barrageFired = false;
+  private convergeFired = false;
+  private implodeFired = false;
   private resetFired = false;
   private elapsed = 0;
+  private tsSm = 1;
 
-  constructor(combat: Combat, hud: Hud, audio: Synth) {
-    this.combat = combat; this.hud = hud; this.audio = audio;
+  /** called once per loop restart so the owner can reset the world (books etc.) */
+  onLoopRestart: () => void = () => {};
+
+  constructor(combat: Combat, strike: Strike, hud: Hud, audio: Synth) {
+    this.combat = combat; this.strike = strike; this.hud = hud; this.audio = audio;
     window.addEventListener('pointermove', (e) => {
       this.mouse.set((e.clientX / innerWidth - 0.5) * 2, (e.clientY / innerHeight - 0.5) * 2);
     });
@@ -56,16 +84,27 @@ export class Director {
     const t = this.phaseTime;
     return t < T_BREACH_HIT ? 0 : t < T_BREACH_DONE ? 1 : t < T_STRIKE_END ? 2 : 3;
   }
+  /** simulation speed the render loop should advance by (hit-stop / slow-mo) */
+  get timeScale(): number { return this.tsSm; }
 
   update(t: number, dt: number, camera: THREE.PerspectiveCamera) {
     this.elapsed = t;
     const pt = this.phaseTime;
 
+    // ---------- time dilation: eased so hit-stops read as impact, not stutter
+    const tsTarget = this.strike.timeScale(t);
+    this.tsSm += (tsTarget - this.tsSm) * Math.min(1, dt * (tsTarget < this.tsSm ? 40 : 6));
+
     // ---------- global uniforms
     U.time.value = t;
-    U.breach.value = Math.pow(seg(pt, T_BREACH_HIT - 1.2, T_BREACH_DONE), 0.8);   // fast tear, slow saturate
-    U.strike.value = Math.pow(seg(pt, T_BREACH_DONE - 1.5, T_BREACH_DONE + 2.0), 1.4); // snapped commitment
+    U.collapse.value = seg(pt, 34.6, 37.8);
+    U.breach.value = Math.pow(seg(pt, T_BREACH_HIT - 1.2, T_BREACH_DONE), 0.8) * (1 - U.collapse.value);
+    U.strike.value = Math.pow(seg(pt, T_BREACH_DONE - 1.5, T_BREACH_DONE + 2.0), 1.4);
     U.inferno.value = Math.min(1, seg(pt, 15, 34) * 1.15 + seg(pt, 38, 43) * 0.05);
+    U.sigil.value = seg(pt, T_SIGIL_START, T_SIGIL_DONE) * (1 - seg(pt, 38.5, 43.0));
+    U.ash.value = seg(pt, 33.4, 37.5) * (1 - seg(pt, 42.0, 44.0));
+    U.scarFade.value = 1 - seg(pt, 39.5, 43.6);
+    U.rays.value = U.breach.value * (0.35 + 0.65 * U.strike.value);
     U.shake.value *= Math.exp(-dt * 3.0);
     U.flash.value *= Math.exp(-dt * 4.5);
     U.caBoost.value *= Math.exp(-dt * 3.4);
@@ -76,16 +115,22 @@ export class Director {
       if (this.resetFired) {
         this.resetFired = false;
         this.volleyIdx = 0;
-        this.volleyJitter = VOLLEYS.map(() => (Math.random() - 0.5) * 0.35);
+        this.volleyJitter = VOLLEYS.map(() => (Math.random() - 0.5) * 0.3);
         this.breachFired = false;
         this.breachDoneFired = false;
-        this.salvoFired = false;
+        this.barrageFired = false;
+        this.convergeFired = false;
+        this.implodeFired = false;
+        this.strike.reset();
+        this.onLoopRestart();
         this.hud.feedReset();
       }
     }
     if (!this.breachFired && pt >= T_BREACH_HIT) {
       this.breachFired = true;
       this.combat.breachBlast(t);
+      this.strike.shock(t, PORTAL, 2.3, 1.7);
+      this.strike.shock(t + 0.22, PORTAL, 1.3, 1.3);
       this.hud.log('WAY BREACH CONFIRMED — APERTURE 0.0 → 7.4 M');
     }
     // secondary accent when the aperture finishes opening — a settle thump
@@ -93,16 +138,35 @@ export class Director {
       this.breachDoneFired = true;
       U.shake.value += 0.35;
       U.flash.value = Math.max(U.flash.value, 0.3);
+      this.strike.shock(t, PORTAL, 1.0, 1.2);
       this.audio.boom(0.5);
+      this.hud.title('奇术打击', 'OCCULT ARTS STRIKE // THAUMIC ORDNANCE RELEASED');
     }
-    while (this.volleyIdx < VOLLEYS.length && pt >= VOLLEYS[this.volleyIdx] + this.volleyJitter[this.volleyIdx]) {
+    while (this.volleyIdx < VOLLEYS.length && pt >= VOLLEYS[this.volleyIdx].t + this.volleyJitter[this.volleyIdx]) {
+      const v = VOLLEYS[this.volleyIdx];
+      this.strike.pillar(t, v.x, v.z, v.s);
       this.combat.fireVolley(t);
       this.volleyIdx++;
     }
-    // closing act — everything left goes into the Way before it seals
-    if (!this.salvoFired && pt >= T_SALVO) {
-      this.salvoFired = true;
+    if (!this.barrageFired && pt >= T_BARRAGE) {
+      this.barrageFired = true;
+      this.strike.barrage(t);
+    }
+    // closing act — a ring of eight, then the finisher on the aperture
+    if (!this.convergeFired && pt >= T_CONVERGE) {
+      this.convergeFired = true;
       this.combat.finalSalvo(t);
+      this.strike.convergence(t);
+      this.hud.log('THAUMIC CONVERGENCE — ALL TUBES, ALL ELEMENTS');
+    }
+    // the Way folds in on itself
+    if (!this.implodeFired && pt >= 34.6) {
+      this.implodeFired = true;
+      this.strike.implode(t);
+      U.flash.value = Math.max(U.flash.value, 0.9);
+      U.shake.value = Math.min(1.8, U.shake.value + 1.0);
+      this.audio.boom(1.4);
+      this.hud.title('焚毁', 'KTE-7909 // WAY COLLAPSE — DENIAL COMPLETE');
     }
     // scripted log beats
     this.logBeats(pt);
@@ -124,15 +188,19 @@ export class Director {
     // ---------- camera
     this.mouseSm.lerp(this.mouse, Math.min(1, dt * 3));
     const orbit = seg(pt, T_BREACH_DONE, T_STRIKE_END);
-    const pull = seg(pt, T_STRIKE_END - 1, T_END - 1);
+    const pull = seg(pt, T_STRIKE_END + 1, T_END - 1);
     const push = seg(pt, T_BREACH_HIT - 1, T_BREACH_DONE);
+    // convergence dolly: drop low and surge at the aperture for the finisher
+    const conv = seg(pt, T_CONVERGE - 0.4, T_CONVERGE + 2.6) * (1 - seg(pt, 34.2, 36.5));
+    // approach: slow crawl-in while the seal draws
+    const creep = seg(pt, 0, T_BREACH_HIT);
 
     // camera: sink toward the floor as the Way opens (push), sweep on a
     // wider arc during strike (orbit), pull high to survey the ash (pull)
     const ang = orbit * 0.65 - 0.0;
-    const baseX = Math.sin(ang) * 11.0 * (1 - pull);
-    const baseY = 5.4 - push * 1.8 + orbit * 1.9 + pull * 5.4;
-    const baseZ = 26 - push * 5.5 - orbit * 3.0 + pull * 5.5;
+    const baseX = Math.sin(ang) * 11.0 * (1 - pull) * (1 - conv * 0.8);
+    const baseY = 5.4 - push * 1.8 + orbit * 1.9 + pull * 5.4 - creep * 0.6 - conv * 3.1;
+    const baseZ = 26 - push * 5.5 - orbit * 3.0 + pull * 5.5 - creep * 1.5 - conv * 7.5;
 
     // ---------- handheld rig: scripted targets are damped, impacts are not
     const sh = U.shake.value;
@@ -150,31 +218,35 @@ export class Director {
     camera.position.z += n(1.3) * sh * 0.7;
 
     this.lookTarget.set(
-      Math.sin(ang * 0.6) * 4 + this.mouseSm.x * 2.6 + swayX * 0.6 + n(2.9) * sh * 1.4,
-      8.6 + push * 1.6 - orbit * 0.8 - this.mouseSm.y * 1.8 + swayY * 0.5 + n(3.7) * sh,
+      Math.sin(ang * 0.6) * 4 * (1 - conv) + this.mouseSm.x * 2.6 + swayX * 0.6 + n(2.9) * sh * 1.4,
+      8.6 + push * 1.6 - orbit * 0.8 + conv * 2.0 - this.mouseSm.y * 1.8 + swayY * 0.5 + n(3.7) * sh,
       -15.5,
     );
     this.lookSm.lerp(this.lookTarget, dampK(3.0));
     camera.lookAt(this.lookSm);
 
     // organic roll — leans into sway, kicks during impacts
-    const rollT = -swayX * 0.016 - this.mouseSm.x * 0.007 + n(1.1) * sh * 0.02;
+    const rollT = -swayX * 0.016 - this.mouseSm.x * 0.007 + n(1.1) * sh * 0.02 + conv * 0.035;
     this.rollSm += (rollT - this.rollSm) * dampK(3.6);
     camera.rotateZ(this.rollSm);
 
-    const fovT = 55 + U.flash.value * 4 - orbit * 2 + Math.sin(t * 0.21) * 0.6;
+    // the lens breathes with the strike: impacts punch FOV out, the
+    // convergence dolly widens it, slow-mo holds it there
+    const fovT = 55 + U.flash.value * 5 - orbit * 2 + conv * 9 + Math.sin(t * 0.21) * 0.6;
     this.fovSm += (fovT - this.fovSm) * dampK(5);
     camera.fov = this.fovSm;
     camera.updateProjectionMatrix();
 
-    // combat housekeeping
+    // combat + strike housekeeping
     this.combat.update(t, dt);
+    this.strike.update(t, dt, camera);
   }
 
   private lastBeatIdx = 0;
   private logBeats(pt: number) {
     const beats: [number, () => void][] = [
       [1.0, () => this.hud.log('UPLINK ESTABLISHED // TAC-FEED 04 LIVE')],
+      [2.4, () => this.hud.log('THAUMIC SEAL INSCRIBING — 6-POINT / 8-POINT LATTICE')],
       [3.5, () => this.hud.log('KNOCK-PATTERN OVERRIDE ACCEPTED')],
       [6.0, () => this.hud.log('WAY SIGNATURE RISING — 0.04 M')],
       [8.2, () => this.hud.log('FIREBREAK-1 IN POSITION // LANCES HOT')],
@@ -183,8 +255,8 @@ export class Director {
       [19.0, () => this.hud.log('SERPENT COUNTER-ELEMENTS: NONE DETECTED')],
       [24.0, () => this.hud.log('INDEX DENIAL PASSED 40%')],
       [29.0, () => this.hud.log('THAUMIC FEEDBACK WITHIN TOLERANCE')],
-      [33.5, () => this.hud.log('ALL ELEMENTS EXFIL — WAY COLLAPSING')],
-      [36.0, () => this.hud.log('KTE-7909-ALEXANDRIA: NEUTRALIZED')],
+      [33.6, () => this.hud.log('ALL ELEMENTS EXFIL — WAY COLLAPSING')],
+      [36.5, () => this.hud.log('KTE-7909-ALEXANDRIA: NEUTRALIZED')],
       [40.0, () => this.hud.log('FEED LOOP ARMS IN 4…3…2…')],
     ];
     if (pt < this.lastBeatIdx) this.lastBeatIdx = 0;

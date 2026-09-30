@@ -7,6 +7,8 @@ export interface Hud {
   flash(size: 'small' | 'big'): void;
   feedGlitch(): void;
   feedReset(): void;
+  /** full-screen title-card slam (kanji + subline) */
+  title(main: string, sub: string): void;
   setBackend(name: string): void;
   setPerf(text: string): void;
   tick(t: number): void;
@@ -20,6 +22,7 @@ export function createHud(): Hud {
   const phaseCells = [...document.querySelectorAll<HTMLElement>('.phase-cell')];
   const alertEl = $('alert');
   const glitchEl = $('glitch');
+  const titleEl = $('strike-title');
   const clockEl = $('clock');
   const backendEl = $('backend');
   const perfEl = $('perf');
@@ -59,6 +62,14 @@ export function createHud(): Hud {
       clearTimeout(flashTimer);
       flashTimer = window.setTimeout(() => document.body.classList.remove('alerted'), 2600);
     }
+  };
+
+  const title = (main: string, sub: string) => {
+    titleEl.querySelector('b')!.textContent = main;
+    titleEl.querySelector('span')!.textContent = sub;
+    titleEl.classList.remove('run');
+    void titleEl.offsetWidth;
+    titleEl.classList.add('run');
   };
 
   const feedGlitch = () => {
@@ -101,5 +112,5 @@ export function createHud(): Hud {
     clockEl.textContent = `T+${hh}:${mm}:${ss}`;
   };
 
-  return { log, setPhase, flash, feedGlitch, feedReset, setBackend, setPerf, tick };
+  return { log, setPhase, flash, title, feedGlitch, feedReset, setBackend, setPerf, tick };
 }

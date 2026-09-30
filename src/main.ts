@@ -6,8 +6,10 @@ import {
 } from './diag';
 import { buildShelves, buildFloor, buildBooks } from './library';
 import { buildPortal } from './portal';
-import { buildDust, buildEmbers, buildFlames, buildSmoke, buildPageVortex } from './particles';
+import { buildDust, buildEmbers, buildFlames, buildSmoke, buildPageVortex, buildAsh } from './particles';
 import { buildCombat } from './combat';
+import { buildStrike } from './strike';
+import { buildThaumaturgy } from './sigil';
 import { buildPost } from './fx';
 import { Director } from './director';
 import { createHud } from './hud';
@@ -125,6 +127,9 @@ async function boot() {
   const fireLight = new THREE.PointLight(0xff6a22, 0, 70, 1.7);
   fireLight.position.set(0, 2.4, -10);
   scene.add(fireLight);
+  // detonation light — snaps to each pillar impact and decays with the flash envelope
+  const strikeLight = new THREE.PointLight(0xaad0ff, 0, 60, 1.5);
+  scene.add(strikeLight);
 
   const skip = new Set((new URLSearchParams(location.search).get('skip') || '').split(',').filter(Boolean));
   const scalable: THREE.Sprite[] = [];
@@ -148,6 +153,9 @@ async function boot() {
   const vortex = buildPageVortex();
   add('vortex', vortex.clean);
   add('vortexB', vortex.burning);
+  add('ash', buildAsh());
+  const thaum = buildThaumaturgy();
+  add('sigil', thaum.object);
 
   const hud = createHud();
   const audio = createSynth();
@@ -155,12 +163,15 @@ async function boot() {
   add('lances', combat.lances);
   add('bursts', combat.bursts);
   add('rings', combat.rings);
+  const strike = buildStrike(combat, hud, audio);
+  add('strike', strike.object);
 
   // two precompiled post chains — swapping pipelines is a pointer change,
   // so quality transitions never recompile shaders mid-run
   const postFull = buildPost(renderer, scene, camera, false);
   const postLite = buildPost(renderer, scene, camera, true);
-  const director = new Director(combat, hud, audio);
+  const director = new Director(combat, strike, hud, audio);
+  director.onLoopRestart = () => books.reset();
 
   document.getElementById('emblem-slot')!.innerHTML = makeEmblemSVG();
   document.getElementById('boot-emblem')!.innerHTML = makeEmblemSVG(44);
@@ -258,14 +269,14 @@ async function boot() {
   });
 
   // ---------------------------------------------------------------- loop
-  let t = 0;
+  let t = Number(params.get('seek')) || 0;   // ?seek=SECONDS jumps the timeline (debug / capture)
   let last = performance.now();
   let frame = 0;
   renderer.setAnimationLoop(() => {
     const now = performance.now();
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
-    t += dt;
+    t += dt * director.timeScale;   // hit-stop / convergence slow-mo
 
     // fps governor — down fast, up slow; badge shows live fps so the user
     // can see the governor working
@@ -282,12 +293,15 @@ async function boot() {
     }
 
     director.update(t, dt, camera);
+    thaum.update(t);
     audio.update(dt);
     books.update(t, U.strike.value, U.breach.value);
 
     // light rig breathes with the scene
     portalLight.intensity = 30 + U.breach.value * 700 + Math.sin(t * 7.3) * 8 * U.breach.value;
     fireLight.intensity = U.inferno.value * 420 * (0.8 + Math.sin(t * 9.7) * 0.2);
+    strikeLight.position.copy(strike.lastHit);
+    strikeLight.intensity = U.flash.value * 1400;
 
     if (embers.updateKernel) renderer.compute(embers.updateKernel);
     try {

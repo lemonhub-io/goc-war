@@ -2,7 +2,7 @@
 import * as THREE from 'three/webgpu';
 import {
   Fn, vec2, vec3, vec4, float, uv, hash, mix, smoothstep, pow,
-  exp, atan, instanceIndex,
+  exp, atan, sin, cos, instanceIndex, mx_noise_float,
   cameraProjectionMatrix, cameraViewMatrix,
 } from 'three/tsl';
 import { U, PORTAL, emberRamp, wayRamp, pushImpact, attr } from './shared';
@@ -26,6 +26,10 @@ export interface Combat {
   breachBlast(t: number): void;
   update(t: number, dt: number): void;
   pendingCount(): number;
+  /** spark burst at a world point (cold = GOC-blue, else Greek-fire orange) */
+  burst(t: number, pos: THREE.Vector3, cold: boolean, strength?: number): void;
+  /** expanding floor shock-ring */
+  ring(pos: THREE.Vector3, t: number, maxR: number, dur: number, col: THREE.Color): void;
 }
 
 export function buildCombat(hud: Hud, audio: Synth): Combat {
@@ -151,6 +155,16 @@ export function buildCombat(hud: Hud, audio: Synth): Combat {
     transparent: true, depthWrite: false, side: THREE.DoubleSide,
     blending: THREE.AdditiveBlending,
   });
+  // leading-edge shock front with crawling fracture noise; instance colour supplies hue + fade
+  ringMat.colorNode = Fn(() => {
+    const p = uv().sub(0.5).mul(2.0);
+    const r = p.length();
+    const a = atan(p.y, p.x);
+    const lead = pow(smoothstep(0.8, 1.0, r), 3.0);
+    const fracture = mx_noise_float(vec3(cos(a).mul(3.0), sin(a).mul(3.0), U.time.mul(2.0))).mul(0.5).add(0.75);
+    const tail = smoothstep(0.8, 0.95, r).mul(0.25);
+    return vec4(vec3(1.0, 1.0, 1.0).mul(lead.mul(fracture).mul(1.7).add(tail)), 1.0);
+  })();
   const rings = new THREE.InstancedMesh(ringGeo, ringMat, MAX_RINGS);
   rings.frustumCulled = false;
   rings.renderOrder = 15;
@@ -306,6 +320,7 @@ export function buildCombat(hud: Hud, audio: Synth): Combat {
   return {
     lances, bursts, rings, fireVolley, finalSalvo, breachBlast, update,
     pendingCount: () => pending.length,
+    burst: spawnBurst, ring: spawnRing,
   };
 }
 

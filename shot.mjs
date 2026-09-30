@@ -4,7 +4,7 @@ import { chromium } from 'playwright-core';
 const EXE = process.env.CHROME || '/home/user1/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome';
 const URL = process.env.URL || 'http://127.0.0.1:5199/';
 const OUT = process.env.OUT || '/tmp/shots';
-const times = (process.env.TIMES || '3500,12000,21000,36000').split(',').map(Number);
+const times = (process.env.TIMES || '7000,12000,17500,26000,34500,38000').split(',').map(Number);
 
 const browser = await chromium.launch({
   executablePath: EXE,
