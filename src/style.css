@@ -283,6 +283,16 @@ body.alerted .top .cell { border-color: rgba(255, 59, 48, 0.6); }
 }
 #audio-toggle:hover { color: var(--ink); border-color: var(--line-hi); }
 #audio-toggle:focus-visible { outline: 1px solid var(--blue); outline-offset: 2px; }
+#install-toggle {
+  position: fixed; right: 26px; bottom: 116px; z-index: 45;
+  background: var(--panel); color: var(--dim);
+  border: 1px solid var(--line);
+  font: inherit; font-size: 9.5px; letter-spacing: 0.14em;
+  padding: 7px 12px; cursor: pointer;
+}
+#install-toggle:hover { color: var(--ink); border-color: var(--line-hi); }
+#install-toggle:focus-visible { outline: 1px solid var(--blue); outline-offset: 2px; }
+
 #audio-toggle.unarmed {
   color: var(--red); border-color: var(--red);
   animation: audio-pulse 1.4s ease-in-out infinite;

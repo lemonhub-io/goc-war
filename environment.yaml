@@ -36,6 +36,15 @@ knowledge:
       npm run dev -- --port 5199 &
       CHROME=$HOME/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome \
         URL=http://127.0.0.1:5199/ TIMES=3500,12000 OUT=/tmp/shots node shot.mjs
+  - name: pwa
+    contents: |
+      PWA = public/manifest.webmanifest + icons (public/icons/) + dist/sw.js.
+      sw.js at repo root is the SOURCE — the goc-pwa plugin in vite.config.ts
+      stamps __VERSION__/__PRECACHE__ into dist/sw.js on every build; never edit
+      the dist copy. Regenerate icons with `npm run icons`. On this machine both
+      playwright chromium binaries lack system libs — run any chromium script
+      (shot.mjs, make-icons.mjs) with LD_LIBRARY_PATH=$PWD/.chromium-libs and
+      CHROME=$HOME/.cache/ms-playwright/chromium_headless_shell-1243/chrome-headless-shell-linux64/chrome-headless-shell
   - name: wasm-notes
     contents: |
       public/wasm-simd and public/wasm-mt are committed build outputs — the app

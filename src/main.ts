@@ -15,6 +15,7 @@ import { Director } from './director';
 import { createHud } from './hud';
 import { createSynth } from './audio';
 import { U, PORTAL, makeEmblemSVG } from './shared';
+import { initPwa } from './pwa';
 
 installDiagHooks();
 
@@ -317,6 +318,8 @@ async function boot() {
     frame++;
   });
 }
+
+initPwa();
 
 boot().catch((e) => {
   console.error(e);
