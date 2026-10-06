@@ -399,3 +399,7 @@ body.alerted .top .cell { border-color: rgba(255, 59, 48, 0.6); }
   #audio-toggle { top: auto; bottom: 26px; right: 26px; margin-top: 0; }
   #diag-toggle { bottom: 66px; right: 26px; }
 }
+
+/* ?clean — capture mode: scene only */
+body.clean #hud, body.clean #scanlines, body.clean #audio-toggle, body.clean #diag-toggle,
+body.clean #diag, body.clean #strike-title, body.clean #bars, body.clean #alert, body.clean #install-toggle { display: none !important; }

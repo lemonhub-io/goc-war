@@ -1,4 +1,4 @@
-// shared.ts — global uniforms, constants, procedural textures
+// shared.ts — world constants, global uniforms, colour ramps, procedural textures
 import * as THREE from 'three/webgpu';
 import { uniform, uniformArray, Fn, vec3, mix, smoothstep, instancedBufferAttribute } from 'three/tsl';
 import type { Node } from 'three/webgpu';
@@ -21,20 +21,38 @@ export const attr = (a: THREE.InstancedBufferAttribute | THREE.BufferAttribute):
  *  params are typed `Scalar` (vec3()/math fns reject untyped members) */
 export const asScalar = (n: TslField): Node<'float'> => n as unknown as Node<'float'>;
 
-export const SCAR_COUNT = 12;
+/** untyped vec3 constructor — TSL's typings reject swizzle members as scalars */
+export const V3: (x: any, y: any, z: any) => any = vec3 as any;
+
+export const TWO_PI = Math.PI * 2;
 export const SHOCK_COUNT = 6;
+
+// ---------------------------------------------------------------- world
+//
+// Two worlds share one scene and are toggled by the director:
+//   ORBIT   — platform at the origin, Earth far below (ER / ALT in scene units)
+//   GROUND  — flat terrain, ground zero at the origin, 1 unit = 100 m
+
+/** Earth radius and platform altitude (scene units, stylised) */
+export const ER = 560;
+export const ALT = 130;
+export const EARTH_C = new THREE.Vector3(0, -(ER + ALT), 0);
+
+/** unit vector (Earth-local) to the strike site, and its world position */
+export const TARGET_DIR = new THREE.Vector3(-0.07, 1, -0.045).normalize();
+export const TARGET_POS = EARTH_C.clone().addScaledVector(TARGET_DIR, ER);
+
+/** direction to the sun — backlights the platform, puts the strike site on the night side */
+export const SUN_DIR = new THREE.Vector3(0.78, -0.12, -0.40).normalize();
+
+/** muzzle of the lance in platform-local space (cannon points down -Y) */
+export const MUZZLE_LOCAL = new THREE.Vector3(0, -28.4, 0);
 
 // ---------------------------------------------------------------- uniforms
 
 export const U = {
   /** monotonic seconds */
   time: uniform(0),
-  /** 0..1 — way aperture */
-  breach: uniform(0),
-  /** 0..1 — library fire spread */
-  inferno: uniform(0),
-  /** 0..1 — combat activity (vortex speed, lance glow) */
-  strike: uniform(0),
   /** camera shake amplitude */
   shake: uniform(0),
   /** white flash envelope */
@@ -43,58 +61,47 @@ export const U = {
   caBoost: uniform(0),
   /** live fill-rate dial — shrinks big soft sprites (smoke/flames) on low tiers */
   puffScale: uniform(1),
-  /** global exposure lift during breach */
+  /** global exposure lift */
   exposure: uniform(1),
-  /** last 4 impact events: xyz pos + w = start time */
-  impacts: uniformArray([
-    new THREE.Vector4(0, -999, 0, -999),
-    new THREE.Vector4(0, -999, 0, -999),
-    new THREE.Vector4(0, -999, 0, -999),
-    new THREE.Vector4(0, -999, 0, -999),
-  ]),
-  /** 0..1 — floor sigil draw-on progress */
-  sigil: uniform(0),
-  /** 0..1 — the Way collapsing after the finisher (scales the aperture down) */
-  collapse: uniform(0),
-  /** 0..1 — falling ash density */
-  ash: uniform(0),
-  /** 0..1 — visibility of the floor scars (fades out with the loop) */
-  scarFade: uniform(1),
   /** viewport aspect (w/h) — post shockwaves are aspect-corrected */
   aspect: uniform(16 / 9),
-  /** 0..1 — crepuscular streak strength from the Way */
+  /** crepuscular streak strength + source position (screen uv, y per backend) */
   rays: uniform(0),
-  /** Way centre in screen uv (y down, WebGPU convention) */
-  portalUv: uniform(new THREE.Vector2(0.5, 0.4)),
-  /** floor scars from pillar strikes: x,z = pos, z-comp = size, w = start time */
-  scars: uniformArray(Array.from({ length: SCAR_COUNT }, () => new THREE.Vector4(0, 0, 1, -999))),
+  rayUv: uniform(new THREE.Vector2(0.5, 0.4)),
   /** live screen-space shockwaves: xy = centre uv, z = age 0..1 (>=1 dead), w = signed strength */
   shocks: uniformArray(Array.from({ length: SHOCK_COUNT }, () => new THREE.Vector4(0.5, 0.5, 2, 0))),
+
+  /** 0..1 muzzle flash, barrel heat; absolute time the lance fired this cycle */
+  muzzle: uniform(0),
+  heat: uniform(0),
+  tFire: uniform(1e4),
+  /** 0..1 platform capacitor charge */
+  charge: uniform(0),
+  /** 0..1 target lock on the Earth surface */
+  lock: uniform(0),
+  /** 0..1 designator laser */
+  designator: uniform(0),
+  /** 0..1 re-entry plasma on the rod / atmosphere */
+  reentry: uniform(0),
+  /** absolute time of ground impact in this loop cycle (age = time - tImpact) */
+  tImpact: uniform(1e4),
+  /** 0..1 surface firelight (terrain / clouds / buildings pick it up) */
+  fire: uniform(0),
+
+  sunDir: uniform(SUN_DIR.clone()),
+  targetDir: uniform(TARGET_DIR.clone()),
+  /** world position where the rod meets the atmosphere (orbit view) */
+  entryPos: uniform(new THREE.Vector3(0, -1e4, 0)),
+  /** rod position in the ground world (lights the cloud decks as it passes) */
+  rodPosG: uniform(new THREE.Vector3(0, 1e4, 0)),
 };
 
-let scarCursor = 0;
-/** burn a scorch-and-crack scar into the floor at (x,z) */
-export function pushScar(x: number, z: number, size: number, t: number) {
-  const v = U.scars.array[scarCursor % SCAR_COUNT] as THREE.Vector4;
-  v.set(x, z, size, t);
-  scarCursor++;
-}
-export function clearScars() {
-  for (const v of U.scars.array as THREE.Vector4[]) v.set(0, 0, 1, -999);
-  scarCursor = 0;
-}
+// ---------------------------------------------------------------- screen convention
 
-let impactCursor = 0;
-export function pushImpact(p: THREE.Vector3, t: number) {
-  const v = U.impacts.array[impactCursor % 4] as THREE.Vector4;
-  v.set(p.x, p.y, p.z, t);
-  impactCursor++;
-}
-
-// ---------------------------------------------------------------- constants
-
-export const PORTAL = new THREE.Vector3(0, 10.5, -17.5);
-export const PORTAL_R = 7.4;
+let screenYDown = true;
+/** WebGPU screenUV has y=0 at the top, the WebGL2 backend at the bottom */
+export const setScreenYDown = (v: boolean) => { screenYDown = v; };
+export const isScreenYDown = () => screenYDown;
 
 // ---------------------------------------------------------------- tsl helpers
 
@@ -109,7 +116,7 @@ export const emberRamp = /*#__PURE__*/ Fn(([t]: [any]) => {
   return mix(b, c4, smoothstep(0.68, 1.0, t));
 });
 
-/** GOC energy ramp: near-white -> ice blue -> deep electric */
+/** cold plasma ramp: near-white -> ice blue -> deep electric */
 export const wayRamp = /*#__PURE__*/ Fn(([t]: [any]) => {
   const c1 = vec3(0.95, 0.99, 1.0);
   const c2 = vec3(0.42, 0.75, 1.0);
@@ -117,35 +124,6 @@ export const wayRamp = /*#__PURE__*/ Fn(([t]: [any]) => {
   const a = mix(c1, c2, smoothstep(0.0, 0.45, t));
   return mix(a, c3, smoothstep(0.45, 1.0, t));
 });
-
-export const TWO_PI = Math.PI * 2;
-
-/** deterministic fire spawn zones: xyz = center, w = radius */
-export const FIRE_ZONE_COUNT = 26;
-export function buildFireZones(): Float32Array {
-  const arr = new Float32Array(FIRE_ZONE_COUNT * 4);
-  let i = 0;
-  const put = (x: number, y: number, z: number, r: number) => {
-    arr[i * 4 + 0] = x; arr[i * 4 + 1] = y; arr[i * 4 + 2] = z; arr[i * 4 + 3] = r; i++;
-  };
-  // shelf base lines, both flanks
-  for (let k = 0; k < 9; k++) {
-    const z = -30 + k * 4.4;
-    put(-11.5 - (k % 3) * 6.5, 0.3, z, 3.2);
-    put(11.5 + (k % 3) * 6.5, 0.3, z, 3.2);
-  }
-  // center-floor hotspots (book piles) under the portal
-  put(0, 0.4, -12, 4.5);
-  put(-3.5, 0.3, -8, 2.6);
-  put(3.8, 0.3, -7, 2.8);
-  put(-1.2, 0.3, -4, 2.2);
-  put(1.8, 0.3, -3, 2.4);
-  // portal ring splash
-  put(0, 10.5, -17.5, 7.2);
-  put(0, 4.0, -16.5, 3.0);
-  put(-5.5, 6.5, -17, 2.2);
-  return arr;
-}
 
 // ---------------------------------------------------------------- textures
 
@@ -185,74 +163,6 @@ export function makeSmokeTexture(): THREE.CanvasTexture {
     g.fillStyle = mask;
     g.fillRect(0, 0, 128, 128);
     g.globalCompositeOperation = 'source-over';
-  });
-}
-
-/** 2x2 page atlas: 3 parchment variants + 1 charred glowing variant */
-export function makePageAtlas(): THREE.CanvasTexture {
-  return canvasTexture(256, 256, (g) => {
-    g.clearRect(0, 0, 256, 256);
-    const cell = (cx: number, cy: number, mode: number) => {
-      g.save();
-      g.translate(cx * 128, cy * 128);
-      // parchment body with torn silhouette — alpha channel carries the page shape
-      g.beginPath();
-      const x0 = 22, y0 = 14, w = 84, h = 100;
-      g.moveTo(x0 + 6, y0);
-      g.lineTo(x0 + w - 8, y0 + 3);
-      g.lineTo(x0 + w, y0 + h * 0.4);
-      g.lineTo(x0 + w - 5, y0 + h - 6);
-      g.lineTo(x0 + 10, y0 + h);
-      g.lineTo(x0, y0 + h * 0.55);
-      g.lineTo(x0 + 3, y0 + 8);
-      g.closePath();
-      if (mode < 3) {
-        const shades = ['#d9cdb2', '#cbbfa4', '#e2d7bd'];
-        g.fillStyle = shades[mode];
-        g.fill();
-        // scribbled glyph rows
-        g.strokeStyle = 'rgba(58,44,30,0.75)';
-        g.lineWidth = 1.6;
-        for (let row = 0; row < 9; row++) {
-          const y = y0 + 12 + row * 9.5;
-          g.beginPath();
-          let x = x0 + 10 + Math.random() * 6;
-          const xEnd = x0 + w - 10 - Math.random() * 22;
-          while (x < xEnd) {
-            const seg = 3 + Math.random() * 7;
-            const dy = (Math.random() - 0.5) * 4.5;
-            g.moveTo(x, y);
-            g.lineTo(x + seg, y + dy);
-            if (Math.random() < 0.3) { g.moveTo(x + seg * 0.5, y - 2.6); g.lineTo(x + seg * 0.5, y + 2.6); }
-            x += seg + 2.5;
-          }
-          g.stroke();
-        }
-        // marginal sigil
-        g.strokeStyle = 'rgba(120,40,30,0.6)';
-        g.strokeRect(x0 + w - 18, y0 + 6, 10, 10);
-      } else {
-        // charred page: near-black body, burning cracks
-        g.fillStyle = '#0b0705';
-        g.fill();
-        g.strokeStyle = 'rgba(255,120,30,0.95)';
-        g.lineWidth = 1.4;
-        for (let i = 0; i < 26; i++) {
-          const x = x0 + Math.random() * w;
-          const y = y0 + Math.random() * h;
-          g.beginPath();
-          g.moveTo(x, y);
-          g.lineTo(x + (Math.random() - 0.5) * 18, y + (Math.random() - 0.5) * 18);
-          g.stroke();
-        }
-        // ember edge
-        g.strokeStyle = 'rgba(255,160,60,0.9)';
-        g.lineWidth = 2.5;
-        g.stroke();
-      }
-      g.restore();
-    };
-    cell(0, 0, 0); cell(1, 0, 1); cell(0, 1, 2); cell(1, 1, 3);
   });
 }
 

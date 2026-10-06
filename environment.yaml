@@ -32,10 +32,11 @@ knowledge:
       npm run build && npm run preview   # production build preview
   - name: screenshots
     contents: |
-      # capture animation frames headlessly (SwiftShader WebGPU):
+      # capture deterministic stills at loop times (seconds) headlessly; uses the
+      # ?webgl debug backend because SwiftShader WebGPU devices get lost under load:
       npm run dev -- --port 5199 &
       CHROME=$HOME/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome \
-        URL=http://127.0.0.1:5199/ TIMES=3500,12000 OUT=/tmp/shots node shot.mjs
+        URL=http://127.0.0.1:5199/ TIMES=5,14.2,24 OUT=/tmp/shots node shot.mjs
   - name: pwa
     contents: |
       PWA = public/manifest.webmanifest + icons (public/icons/) + dist/sw.js.

@@ -1,5 +1,5 @@
-// fx.ts — post chain: HDR bloom + impact-driven chromatic aberration +
-// vignette, film grain, faint scanline weave.
+// fx.ts — post chain: shockwave refraction, sun/fireball rays, HDR bloom,
+// impact-driven chromatic aberration, vignette, film grain, scanline weave.
 // `lite` tier: weaker bloom, no chromatic aberration — roughly halves the
 // per-pixel post cost on weak GPUs while keeping the signature glow.
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -15,7 +15,7 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
   const sceneColor = scenePass.getTextureNode();
 
   // ---- shockwave refraction: each live shock is an expanding gaussian band that
-  // shoves the frame radially (outward for strikes, inward for the Way collapse)
+  // shoves the frame radially (outward for muzzle / impact blasts)
   let offs: any = vec2(0.0, 0.0);
   for (let k = 0; k < SHOCK_COUNT; k++) {
     const sh = field(U.shocks.element(k));
@@ -34,11 +34,11 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
   }
   const warped = field(sceneColor.sample(screenUV.sub(offs)));
 
-  // ---- crepuscular streaks: short radial march toward the Way; only the
-  // hot HDR pixels (lum > ~1) contribute so the hall itself stays clean
+  // ---- crepuscular streaks: short radial march toward the light source (sun / fireball); only the
+  // hot HDR pixels (lum > ~1) contribute so the rest of the frame stays clean
   let rays: any = vec3(0.0, 0.0, 0.0);
   if (!lite) {
-    const toC = field(U.portalUv).sub(screenUV);
+    const toC = field(U.rayUv).sub(screenUV);
     for (let i = 1; i <= 6; i++) {
       const tap = field(sceneColor.sample(screenUV.add(toC.mul(i * 0.07)))).rgb;
       const lum = dot(tap, vec3(0.3, 0.59, 0.11));
@@ -47,7 +47,7 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
     rays = rays.mul(field(U.rays).mul(0.32));
   }
 
-  const bloomed = warped.add(bloom(sceneColor, lite ? 0.55 : 0.85, 0.62, 0.02)).add(vec4(rays, 0.0));
+  const bloomed = warped.add(bloom(sceneColor, lite ? 0.5 : 0.75, 0.55, 0.65)).add(vec4(rays, 0.0));
   const c: TslField = lite
     ? bloomed
     : field(chromaticAberration(bloomed, field(U.caBoost).mul(0.55).add(0.06), new THREE.Vector2(0.5, 0.5), float(1.05)));
@@ -59,14 +59,15 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
     // vignette
     const vig = smoothstep(0.95, 0.32, r.mul(1.35));
     // animated grain
-    const grain = hash(vec3(screenUV.mul(919.0), U.time.mul(61.0))).mul(0.05).sub(0.025);
+    // (scalar seed — a vec3 hash collapses to per-column noise on some backends)
+    const grain = hash(dot(screenUV.mul(919.0), vec2(12.9898, 78.233)).add(U.time.mul(61.0))).mul(0.022).sub(0.011);
     // faint scanline weave, breathes with alert state
     const scan = sin(screenUV.y.mul(900.0).add(U.time.mul(9.0))).mul(0.012).mul(U.shake.mul(0.5).add(0.4));
-    // breach / impact flash
+    // muzzle / impact flash
     const flash = U.flash.mul(vec3(0.85, 0.9, 1.0)).mul(0.55);
 
-    // grade: scorched warmth as the library burns, cold crush in the shadows
-    const graded = mix(c.rgb, c.rgb.mul(vec3(1.1, 0.97, 0.86)), U.inferno.mul(0.55));
+    // grade: scorched warmth while ground zero burns
+    const graded = mix(c.rgb, c.rgb.mul(vec3(1.1, 0.97, 0.86)), U.fire.mul(0.55));
     const out = graded.mul(vig.mul(U.exposure)).add(grain).add(scan).add(flash);
     return vec4(out, 1.0);
   })();

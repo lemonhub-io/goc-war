@@ -1,5 +1,13 @@
 // hud.ts — tactical telemetry overlay: dossier, telemetry, phase rail, log
-import { U } from './shared';
+
+/** live numbers the director feeds the telemetry panel */
+export interface HudState {
+  capacitor: number;   // MJ
+  velocity: number;    // km/s
+  altitude: number;    // km
+  yieldKt: number;     // kt TNT-equivalent
+  integrity: number;   // % target integrity
+}
 
 export interface Hud {
   log(msg: string): void;
@@ -11,7 +19,7 @@ export interface Hud {
   title(main: string, sub: string): void;
   setBackend(name: string): void;
   setPerf(text: string): void;
-  tick(t: number): void;
+  tick(t: number, s: HudState): void;
 }
 
 const MAX_LOG = 6;
@@ -27,12 +35,9 @@ export function createHud(): Hud {
   const backendEl = $('backend');
   const perfEl = $('perf');
   const tv = {
-    thaum: $('tv-thaum'), eve: $('tv-eve'), aperture: $('tv-aperture'),
-    denial: $('tv-denial'), denialBar: $('tv-denial-bar'),
+    cap: $('tv-cap'), vel: $('tv-vel'), alt: $('tv-alt'),
+    yield: $('tv-yield'), integ: $('tv-integ'), integBar: $('tv-integ-bar'),
   };
-
-  let denial = 0;
-  let lastPhase = 0;
 
   const log = (msg: string) => {
     const d = document.createElement('div');
@@ -43,7 +48,6 @@ export function createHud(): Hud {
   };
 
   const setPhase = (i: number) => {
-    lastPhase = i;
     phaseCells.forEach((c, k) => {
       c.classList.toggle('active', k === i);
       c.classList.toggle('done', k < i);
@@ -78,7 +82,6 @@ export function createHud(): Hud {
     glitchEl.classList.add('run');
   };
   const feedReset = () => {
-    denial = 0;
     log('— FEED LOOP RESTART —');
   };
 
@@ -93,17 +96,13 @@ export function createHud(): Hud {
   };
 
   let clockBase = Date.now();
-  const tick = (t: number) => {
-    // telemetry — derived from scene uniforms + noise
-    const th = (U.breach.value * 940 + Math.sin(t * 2.1) * 30 + Math.sin(t * 7.7) * 12).toFixed(1);
-    const eve = (U.inferno.value * 2400 + 140 + Math.sin(t * 3.3) * 55).toFixed(0);
-    const ap = (U.breach.value * 7.36).toFixed(2);
-    tv.thaum.textContent = `${th} kΨ`;
-    tv.eve.textContent = `${eve} mEV`;
-    tv.aperture.textContent = `${ap} m`;
-    if (lastPhase >= 2) denial = Math.min(96.4, denial + (0.55 + Math.random() * 0.8) * (lastPhase === 3 ? 1.6 : 1));
-    tv.denial.textContent = `${denial.toFixed(1)}%`;
-    tv.denialBar.style.width = `${Math.min(100, denial)}%`;
+  const tick = (_t: number, st: HudState) => {
+    tv.cap.textContent = `${st.capacitor.toFixed(0)} MJ`;
+    tv.vel.textContent = `${st.velocity.toFixed(2)} km/s`;
+    tv.alt.textContent = `${st.altitude.toFixed(1)} km`;
+    tv.yield.textContent = `${st.yieldKt.toFixed(1)} kt`;
+    tv.integ.textContent = `${st.integrity.toFixed(1)}%`;
+    tv.integBar.style.width = `${Math.max(0, Math.min(100, st.integrity))}%`;
     // mission clock
     const s = (Date.now() - clockBase) / 1000;
     const hh = String(Math.floor(s / 3600)).padStart(2, '0');

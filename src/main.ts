@@ -1,30 +1,29 @@
-// main.ts — boot, WebGPU renderer init, scene assembly, quality governor, loop
+// main.ts — boot, renderer init, scene assembly, quality governor, loop
 import * as THREE from 'three/webgpu';
 import {
   installDiagHooks, createDiagPanel, showDiag, dlog, dset,
   diagAdapterInfo, diagFrame, armWatchdog,
 } from './diag';
-import { buildShelves, buildFloor, buildBooks } from './library';
-import { buildPortal } from './portal';
-import { buildDust, buildEmbers, buildFlames, buildSmoke, buildPageVortex, buildAsh } from './particles';
-import { buildCombat } from './combat';
-import { buildStrike } from './strike';
-import { buildThaumaturgy } from './sigil';
+import { buildSky, buildSun, buildEarth, buildEntryFlash } from './space';
+import { buildPlatform } from './platform';
+import { buildRod, buildDesignator } from './rod';
+import { buildGround } from './ground';
+import { buildImpact } from './impact';
 import { buildPost } from './fx';
 import { Director } from './director';
 import { createHud } from './hud';
 import { createSynth } from './audio';
-import { U, PORTAL, makeEmblemSVG } from './shared';
+import { U, SUN_DIR, makeEmblemSVG, setScreenYDown } from './shared';
 import { initPwa } from './pwa';
 
 installDiagHooks();
 
 const BOOT_LINES = [
   'UNGOC TACNET v6.4 // SECURE UPLINK',
-  'AUTH: STRIKE TEAM-1909 "FIREBREAK" — OK',
-  'SAT-THAUM LINK: LOCKED  [108-COUNCIL EYES ONLY]',
-  'COMPILING PARTICLE FIELD — 190K AGENTS',
-  'ESTABLISHING WAY // KTE-7909-ALEXANDRIA',
+  'AUTH: ORBITAL STRIKE GROUP "AEGIS-7" — OK',
+  'ORBITAL LINK: LOCKED  [108-COUNCIL EYES ONLY]',
+  'COMPILING SCENE — EARTH / PLATFORM / GROUND ZERO',
+  'ACQUIRING TARGET // KTE-7909',
 ];
 
 async function typeBoot(): Promise<void> {
@@ -61,16 +60,16 @@ interface GpuBackend {
 const backendOf = (r: THREE.WebGPURenderer): GpuBackend =>
   r.backend as unknown as GpuBackend;
 
-async function initRenderer(canvas: HTMLCanvasElement): Promise<THREE.WebGPURenderer | null> {
-  // WebGPU only — no WebGL fallback
-  if (!('gpu' in navigator)) { dlog('INIT', 'navigator.gpu absent'); return null; }
+async function initRenderer(canvas: HTMLCanvasElement, allowWebGL: boolean): Promise<THREE.WebGPURenderer | null> {
+  // WebGPU only — `?webgl` opts into the WebGL2 backend for debugging / headless capture
+  if (!allowWebGL && !('gpu' in navigator)) { dlog('INIT', 'navigator.gpu absent'); return null; }
   try {
     const r = new THREE.WebGPURenderer({
-      canvas, antialias: false, powerPreference: 'high-performance',
+      canvas, antialias: false, powerPreference: 'high-performance', forceWebGL: allowWebGL,
     });
     await r.init();
-    if (!backendOf(r).isWebGPUBackend) { dlog('INIT', 'renderer init fell through to non-WebGPU backend'); return null; }
-    dlog('INIT', 'WebGPU renderer up');
+    if (!allowWebGL && !backendOf(r).isWebGPUBackend) { dlog('INIT', 'renderer init fell through to non-WebGPU backend'); return null; }
+    dlog('INIT', allowWebGL ? 'WebGL2 backend (debug)' : 'WebGPU renderer up');
     return r;
   } catch (e) {
     dlog('INIT', `renderer init threw: ${e instanceof Error ? e.message : e}`);
@@ -93,11 +92,15 @@ async function boot() {
   const bootDone = typeBoot();
   const canvas = document.getElementById('scene') as HTMLCanvasElement;
 
-  const renderer = await initRenderer(canvas);
+  const params = new URLSearchParams(location.search);
+  if (params.has('clean')) document.body.classList.add('clean');   // ?clean hides the HUD overlay (capture)
+  const renderer = await initRenderer(canvas, params.has('webgl'));
   if (!renderer) {
     fatal('WEBGPU REQUIRED — this page cannot be accessed on this device/browser.\nUSE: Chrome/Edge 113+, Safari 26+, or Firefox 141+ with hardware acceleration enabled.');
     return;
   }
+  const isWebGPU = !!backendOf(renderer).isWebGPUBackend;
+  setScreenYDown(isWebGPU);
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
   renderer.setSize(innerWidth, innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
@@ -113,81 +116,67 @@ async function boot() {
   });
 
   // ---------------------------------------------------------------- scene
+  // Two worlds share the scene and are toggled by the director: ORBIT (station,
+  // Earth, rod) and GROUND (terrain, cities, impact). Lights live at scene
+  // level and never change, so cutting between worlds never recompiles shaders.
   const scene = new THREE.Scene();
-  scene.background = new THREE.Color(0x020308);
-  scene.fog = new THREE.FogExp2(0x05070c, 0.028);
+  scene.background = new THREE.Color(0x000000);
 
-  const camera = new THREE.PerspectiveCamera(55, innerWidth / innerHeight, 0.1, 400);
-  camera.position.set(0, 4.6, 26);
+  const camera = new THREE.PerspectiveCamera(52, innerWidth / innerHeight, 0.3, 7000);
+  camera.position.set(-118, 30, 150);
 
-  // lights — kept sparse; most illumination is emissive + bloom
-  scene.add(new THREE.AmbientLight(0x1a2035, 0.85));
-  const portalLight = new THREE.PointLight(0x5f9dff, 30, 90, 1.6);
-  portalLight.position.set(PORTAL.x, PORTAL.y, PORTAL.z + 3);
-  scene.add(portalLight);
-  const fireLight = new THREE.PointLight(0xff6a22, 0, 70, 1.7);
-  fireLight.position.set(0, 2.4, -10);
-  scene.add(fireLight);
-  // detonation light — snaps to each pillar impact and decays with the flash envelope
-  const strikeLight = new THREE.PointLight(0xaad0ff, 0, 60, 1.5);
-  scene.add(strikeLight);
+  // rim from the real sun, a cheated key from the camera side so the station reads, earthshine fill
+  const rimLight = new THREE.DirectionalLight(0xfff1de, 3.6);
+  rimLight.position.copy(SUN_DIR).multiplyScalar(200);
+  const keyLight = new THREE.DirectionalLight(0xcfe0ff, 2.6);
+  keyLight.position.set(90, 70, 130);
+  scene.add(rimLight, keyLight, new THREE.HemisphereLight(0x101830, 0x4a78c8, 1.3), new THREE.AmbientLight(0x1a2540, 0.7));
 
-  const skip = new Set((new URLSearchParams(location.search).get('skip') || '').split(',').filter(Boolean));
+  const orbit = new THREE.Group();
+  const sky = buildSky();
+  const platform = buildPlatform();
+  const rodOrbit = buildRod(1);
+  const designator = buildDesignator();
+  orbit.add(sky, buildSun(), buildEarth(), buildEntryFlash(), platform.group, rodOrbit.group, designator.mesh);
+  scene.add(orbit);
+
+  const ground = buildGround();
+  const rodGround = buildRod(2.2);
+  ground.group.add(rodGround.group, buildImpact());
+  scene.add(ground.group);
+
+  // quality governor scales every sprite cloud that declares a baseCount
   const scalable: THREE.Sprite[] = [];
-  const add = (name: string, o: THREE.Object3D) => {
-    if (skip.has(name)) return;
-    scene.add(o);
-    if (o.userData?.baseCount) scalable.push(o as THREE.Sprite);
-  };
+  scene.traverse((o) => { if (o.userData?.baseCount) scalable.push(o as THREE.Sprite); });
 
-  add('floor', buildFloor());
-  add('shelves', buildShelves());
-  const books = buildBooks();
-  add('books', books.mesh);
-  add('portal', buildPortal());
-  add('dust', buildDust());
-  const embers = buildEmbers(!skip.has('compute'));
-  add('embers', embers.object);
-  if (embers.initKernel) await renderer.computeAsync(embers.initKernel);
-  add('flames', buildFlames());
-  add('smoke', buildSmoke());
-  const vortex = buildPageVortex();
-  add('vortex', vortex.clean);
-  add('vortexB', vortex.burning);
-  add('ash', buildAsh());
-  const thaum = buildThaumaturgy();
-  add('sigil', thaum.object);
-
+  const skip = new Set((params.get('skip') || '').split(',').filter(Boolean));
   const hud = createHud();
   const audio = createSynth();
-  const combat = buildCombat(hud, audio);
-  add('lances', combat.lances);
-  add('bursts', combat.bursts);
-  add('rings', combat.rings);
-  const strike = buildStrike(combat, hud, audio);
-  add('strike', strike.object);
+  const director = new Director({ orbit, ground, platform, rodOrbit, rodGround, designator, sky }, hud, audio);
+
+  const camParam = params.get('cam');
+  if (camParam) {
+    const v = camParam.split(',').map(Number);
+    if (v.length >= 6) director.camOverride = { pos: new THREE.Vector3(v[0], v[1], v[2]), look: new THREE.Vector3(v[3], v[4], v[5]), fov: v[6] || 50 };
+  }
 
   // two precompiled post chains — swapping pipelines is a pointer change,
   // so quality transitions never recompile shaders mid-run
   const postFull = buildPost(renderer, scene, camera, false);
   const postLite = buildPost(renderer, scene, camera, true);
-  const director = new Director(combat, strike, hud, audio);
-  director.onLoopRestart = () => books.reset();
+
+  // warm every pipeline of both worlds before the first frame so the cuts
+  // (orbit → rod-cam → impact → orbit) never hitch on a shader compile
+  orbit.visible = true; ground.group.visible = true;
+  if (!params.has('nowarm')) {
+    try { await renderer.compileAsync(scene, camera); } catch (e) { dlog('COMPILE', String(e)); }
+  }
 
   document.getElementById('emblem-slot')!.innerHTML = makeEmblemSVG();
   document.getElementById('boot-emblem')!.innerHTML = makeEmblemSVG(44);
-  hud.setBackend('WEBGPU');
+  hud.setBackend(isWebGPU ? 'WEBGPU' : 'WEBGL2');
   hud.log('TAC-FEED 04 ONLINE');
   hud.setPhase(0);
-  // report which sim backend took over the book loop (see wasm.ts)
-  const simTimer = setInterval(() => {
-    const b = books.backend();
-    if (b === 'js') return;
-    clearInterval(simTimer);
-    hud.log(`SIM BACKEND ${b.toUpperCase()}${crossOriginIsolated ? ` ${navigator.hardwareConcurrency}C` : ''}`);
-    dset('books-sim', b);
-  }, 400);
-
   // audio: arms on the first user gesture (browser policy), toggle overrides;
   // the button pulses TAP TO ARM until sound is live so silence is never a surprise
   const at = document.getElementById('audio-toggle')!;
@@ -211,7 +200,6 @@ async function boot() {
   // Fill-rate is the dominant cost (big additive sprites + post chain). Per
   // level we scale: drawn particle fraction, framebuffer pixel budget,
   // soft-sprite footprint, and post complexity — all live, no rebuilds.
-  const params = new URLSearchParams(location.search);
   const forcedQ = params.get('q');                 // ?q=high|med|low|potato
   const softGPU = softwareAdapter(renderer);
   const mobileUA = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
@@ -271,13 +259,15 @@ async function boot() {
 
   // ---------------------------------------------------------------- loop
   let t = Number(params.get('seek')) || 0;   // ?seek=SECONDS jumps the timeline (debug / capture)
+  const freeze = params.has('freeze');       // ?freeze holds the timeline at `seek` (deterministic stills)
   let last = performance.now();
   let frame = 0;
   renderer.setAnimationLoop(() => {
     const now = performance.now();
     const dt = Math.min((now - last) / 1000, 0.1);
     last = now;
-    t += dt * director.timeScale;   // hit-stop / convergence slow-mo
+    if (!freeze) t += dt * director.timeScale;   // slow-mo around the hits
+    else director.snapNext();
 
     // fps governor — down fast, up slow; badge shows live fps so the user
     // can see the governor working
@@ -293,18 +283,9 @@ async function boot() {
       if ((frame & 31) === 0) hud.setPerf(`${autoQ ? 'AUTO·' : ''}${qLevel.name} ${Math.round(fpsEma)}FPS`);
     }
 
-    director.update(t, dt, camera);
-    thaum.update(t);
+    director.update(t, freeze ? 0.033 : dt, camera);
     audio.update(dt);
-    books.update(t, U.strike.value, U.breach.value);
 
-    // light rig breathes with the scene
-    portalLight.intensity = 30 + U.breach.value * 700 + Math.sin(t * 7.3) * 8 * U.breach.value;
-    fireLight.intensity = U.inferno.value * 420 * (0.8 + Math.sin(t * 9.7) * 0.2);
-    strikeLight.position.copy(strike.lastHit);
-    strikeLight.intensity = U.flash.value * 1400;
-
-    if (embers.updateKernel) renderer.compute(embers.updateKernel);
     try {
       if (skip.has('post')) renderer.render(scene, camera); else post.render();
       diagFrame();
@@ -314,7 +295,7 @@ async function boot() {
       if (frame === 0) showDiag('first frame threw');
     }
 
-    if ((frame & 7) === 0) hud.tick(t);
+    if ((frame & 7) === 0) hud.tick(t, director.hudState);
     frame++;
   });
 }

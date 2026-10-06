@@ -1,7 +1,7 @@
 {
-  "name": "UN·GOC // OP: OCCULT ARTS STRIKE",
-  "short_name": "OCCULT ARTS",
-  "description": "Live tactical feed: UN·GOC Physics Division strike team denial op against KTE-7909 'The Wanderers' Library'.",
+  "name": "UN·GOC // OP: ORBITAL STRIKE",
+  "short_name": "ORBITAL STRIKE",
+  "description": "Live tactical feed: UN·GOC Physics Division orbital kinetic strike against KTE-7909.",
   "id": "/",
   "start_url": "/",
   "scope": "/",
