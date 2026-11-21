@@ -160,13 +160,15 @@ export function createDiagPanel() {
 let frames = 0;
 let armed = false;
 export function diagFrame() { frames++; }
+/** arm right before the render loop starts — slow shader warm-up (iPad) must not trip it */
 export function armWatchdog() {
   if (armed) return;
   armed = true;
+  const armT = performance.now();
   setInterval(() => {
     dset('frames', String(frames));
     dset('t', U.time.value.toFixed(1));
-    if (armed && frames === 0 && performance.now() - bootT > 9000) {
+    if (armed && frames === 0 && performance.now() - armT > 9000) {
       armed = false;
       showDiag('watchdog: 0 rendered frames after 9s');
     }

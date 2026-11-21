@@ -10,8 +10,8 @@ import { bloom } from 'three/addons/tsl/display/BloomNode.js';
 import { chromaticAberration } from 'three/addons/tsl/display/ChromaticAberrationNode.js';
 import { U, field, TslField, SHOCK_COUNT } from './shared';
 
-export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, lite = false): THREE.PostProcessing {
-  const post = new THREE.PostProcessing(renderer);
+export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, camera: THREE.Camera, lite = false): THREE.RenderPipeline {
+  const post = new THREE.RenderPipeline(renderer);
   const scenePass = pass(scene, camera);
   const sceneColor = scenePass.getTextureNode();
 

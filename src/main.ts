@@ -51,10 +51,23 @@ function fatal(msg: string) {
  *  absent from the shipped .d.ts */
 interface GpuBackend {
   isWebGPUBackend?: boolean;
-  adapter?: {
-    info?: { vendor?: string; architecture?: string; device?: string; description?: string };
-  };
+  /** true when the device lacks 'core-features-and-limits' (some WebKit builds) */
+  compatibilityMode?: boolean | null;
   device?: { lost: Promise<{ reason: string; message: string }> };
+}
+
+/** the adapter isn't kept by three's backend — ask for one ourselves for the diag/tiering.
+ *  GPUAdapterInfo fields are prototype getters, so they're copied out explicitly. */
+interface AdapterLike {
+  info?: { vendor?: string; architecture?: string; device?: string; description?: string };
+  features?: { has(name: string): boolean };
+  limits?: Record<string, number>;
+}
+async function probeAdapter(): Promise<AdapterLike | null> {
+  try {
+    const gpu = (navigator as Navigator & { gpu?: { requestAdapter(o?: object): Promise<AdapterLike | null> } }).gpu;
+    return (await gpu?.requestAdapter({ powerPreference: 'high-performance' })) ?? null;
+  } catch { return null; }
 }
 
 const backendOf = (r: THREE.WebGPURenderer): GpuBackend =>
@@ -78,9 +91,9 @@ async function initRenderer(canvas: HTMLCanvasElement, allowWebGL: boolean): Pro
 }
 
 /** true if the GPU adapter is software-emulated (SwiftShader / llvmpipe) */
-function softwareAdapter(renderer: THREE.WebGPURenderer): boolean {
+function softwareAdapter(adapter: AdapterLike | null): boolean {
   try {
-    const info = backendOf(renderer).adapter?.info;
+    const info = adapter?.info;
     const name = `${info?.vendor ?? ''} ${info?.architecture ?? ''} ${info?.description ?? ''}`;
     return /swiftshader|llvmpipe|software|basic render/i.test(name);
   } catch { return false; }
@@ -104,8 +117,21 @@ async function boot() {
   renderer.setPixelRatio(Math.min(devicePixelRatio, 1.6));
   renderer.setSize(innerWidth, innerHeight);
   renderer.toneMapping = THREE.ACESFilmicToneMapping;
-  diagAdapterInfo(backendOf(renderer).adapter?.info);
-  armWatchdog();
+  const adapter = isWebGPU ? await probeAdapter() : null;
+  diagAdapterInfo(adapter?.info);
+  dset('compat', String(backendOf(renderer).compatibilityMode ?? 'n/a'));
+  if (adapter?.features) dset('core-features', String(adapter.features.has('core-features-and-limits')));
+  if (adapter?.limits) {
+    const l = adapter.limits;
+    dset('limits', `tex2d ${l.maxTextureDimension2D} vbuf ${l.maxVertexBuffers} vattr ${l.maxVertexAttributes} interstage ${l.maxInterStageShaderVariables} ubo ${l.maxUniformBufferBindingSize}`);
+  }
+  // GPU validation errors are asynchronous and never reach the render try/catch
+  let gpuErrors = 0;
+  (renderer as unknown as { onError: (i: { type?: string; message?: string }) => void }).onError = (i) => {
+    gpuErrors++;
+    dset('gpu-errors', String(gpuErrors));
+    if (gpuErrors <= 6) dlog('GPU', `${i.type ?? 'GPUError'}: ${i.message ?? ''}`.slice(0, 900));
+  };
 
   // if the WebGPU device is lost (driver crash / GPU timeout), fail visibly
   backendOf(renderer).device?.lost.then((info) => {
@@ -246,7 +272,7 @@ async function boot() {
   // level we scale: drawn particle fraction, framebuffer pixel budget,
   // soft-sprite footprint, and post complexity — all live, no rebuilds.
   const forcedQ = params.get('q');                 // ?q=high|med|low|potato
-  const softGPU = softwareAdapter(renderer);
+  const softGPU = softwareAdapter(adapter);
   const mobileUA = /Mobi|Android|iPhone|iPad/i.test(navigator.userAgent);
   const weakHW = (navigator.hardwareConcurrency ?? 8) <= 4
     || ((navigator as Navigator & { deviceMemory?: number }).deviceMemory ?? 8) <= 4;
@@ -303,6 +329,14 @@ async function boot() {
   });
 
   // ---------------------------------------------------------------- loop
+  // render ladder: a chain that keeps throwing (driver / WGSL compiler quirks on
+  // some WebKit builds) steps down to the lite chain, then to a bare scene
+  // render, so the feed degrades instead of going black
+  const PATHS = ['post', 'lite post', 'no post'];
+  let path = 0;
+  let fails = 0;
+  dset('render-path', PATHS[path]);
+  armWatchdog();
   let t = Number(params.get('seek')) || 0;   // ?seek=SECONDS jumps the timeline (debug / capture)
   const freeze = params.has('freeze');       // ?freeze holds the timeline at `seek` (deterministic stills)
   let last = performance.now();
@@ -332,12 +366,24 @@ async function boot() {
     audio.update(dt);
 
     try {
-      if (skip.has('post')) renderer.render(scene, camera); else post.render();
+      if (skip.has('post') || path === 2) renderer.render(scene, camera);
+      else (path === 1 ? postLite : post).render();
       diagFrame();
+      fails = 0;
     } catch (e) {
-      // pipeline build failures land here on some drivers — surface once
-      if ((frame & 63) === 0) dlog('RENDER', e instanceof Error ? (e.stack || e.message) : String(e));
-      if (frame === 0) showDiag('first frame threw');
+      // pipeline build failures land here on some drivers
+      const msg = e instanceof Error ? (e.stack || e.message) : String(e);
+      if (fails === 0) {
+        dlog('RENDER', `[${PATHS[path]}] ${msg}`.slice(0, 1500));
+        dset(`render-error-${path}`, msg.split('\n')[0].slice(0, 240));
+      }
+      if (++fails >= 3) {
+        if (path < 2) {
+          path++; fails = 0;
+          dset('render-path', PATHS[path]);
+          dlog('RENDER', `stepping down to: ${PATHS[path]}`);
+        } else if (fails === 3) showDiag('every render path throws');
+      }
     }
 
     if ((frame & 7) === 0) hud.tick(t, director.hudState);
