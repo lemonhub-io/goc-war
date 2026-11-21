@@ -10,7 +10,7 @@ import {
   Fn, vec2, vec3, vec4, float, hash, mix, smoothstep, pow, abs, sin, cos, exp, fract, step, sqrt,
   normalize, max, clamp, texture, uv, mx_noise_float, positionLocal, normalView, instanceIndex,
 } from 'three/tsl';
-import { U, TWO_PI, V3, field, attr, emberRamp, makeSmokeTexture } from './shared';
+import { U, TWO_PI, V3, field, attr, asScalar, emberRamp, makeSmokeTexture } from './shared';
 
 const pl: any = field(positionLocal);
 import { SHOCK_C0, SHOCK_K } from './ground';
@@ -20,7 +20,7 @@ const ageP = () => max(age(), 0.0);
 const live = () => step(0.0, age());
 const shockR = (a: any) => a.mul(SHOCK_C0).div(a.mul(SHOCK_K).add(1.0));
 /** size scale for volumes that grow with yield — square root, so a big strike reads bigger yet stays in frame */
-const ysz = (): any => field(U.yieldK).sqrt();
+const ysz = () => asScalar(field(U.yieldK).sqrt());
 
 function additive(extra: object = {}) {
   return new THREE.MeshBasicNodeMaterial({
