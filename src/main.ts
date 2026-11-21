@@ -1,4 +1,4 @@
-// main.ts — boot, renderer init, scene assembly, quality governor, loop
+// main.ts — boot, renderer init, scene assembly, operator input, quality governor, loop
 import * as THREE from 'three/webgpu';
 import {
   installDiagHooks, createDiagPanel, showDiag, dlog, dset,
@@ -153,6 +153,8 @@ async function boot() {
   const hud = createHud();
   const audio = createSynth();
   const director = new Director({ orbit, ground, platform, rodOrbit, rodGround, designator, sky }, hud, audio);
+  // ?freeze (stills) and ?auto (kiosk / ambient screen) run the plain cinematic loop
+  director.interactive = !params.has('freeze') && !params.has('auto');
 
   const camParam = params.get('cam');
   if (camParam) {
@@ -185,13 +187,56 @@ async function boot() {
     at.classList.toggle('unarmed', !audio.enabled);
   };
   setAudioLabel();
-  at.addEventListener('click', () => { audio.toggle(); setAudioLabel(); });
+  // blur after a click so Space goes back to being the trigger, not a button press
+  at.addEventListener('click', () => { audio.toggle(); setAudioLabel(); at.blur(); });
   const arm = (e: Event) => {
     if (audio.enabled || e.target === at) return;
     audio.toggle(); setAudioLabel();
   };
   addEventListener('pointerdown', arm);
   addEventListener('keydown', arm);
+  // ---------------------------------------------------------------- operator input
+  // the whole frame is the trigger: press-and-hold (pointer / Space / Enter)
+  // charges at the gate and fast-forwards elsewhere; a pointer that travels
+  // turns into a look-around drag
+  const offTrigger = (e: Event) =>
+    e.target instanceof Element && !!e.target.closest('button, a, input, textarea, #diag, #fatal, #boot');
+  let ptrId = -1, px0 = 0, py0 = 0, pxL = 0, pyL = 0;
+  addEventListener('pointerdown', (e) => {
+    if (ptrId !== -1 || offTrigger(e) || (e.pointerType === 'mouse' && e.button !== 0)) return;
+    ptrId = e.pointerId; px0 = pxL = e.clientX; py0 = pyL = e.clientY;
+    director.press('ptr');
+  });
+  addEventListener('pointermove', (e) => {
+    if (e.pointerId !== ptrId) return;
+    director.drag(e.clientX - pxL, e.clientY - pyL, Math.hypot(e.clientX - px0, e.clientY - py0));
+    pxL = e.clientX; pyL = e.clientY;
+  });
+  const ptrEnd = (e: PointerEvent) => { if (e.pointerId === ptrId) { ptrId = -1; director.lift('ptr'); } };
+  addEventListener('pointerup', ptrEnd);
+  addEventListener('pointercancel', ptrEnd);
+  const trigKey = (e: KeyboardEvent) => {
+    if (e.code !== 'Space' && e.code !== 'Enter') return false;
+    // a button that only holds focus from a mouse click hands Space back to the trigger;
+    // keyboard-focused buttons (focus-visible) keep their normal activation
+    const el = e.target;
+    if (el instanceof HTMLButtonElement && !el.closest('#diag, #fatal') && !el.matches(':focus-visible')) {
+      el.blur();
+      return true;
+    }
+    return !offTrigger(e);
+  };
+  addEventListener('keydown', (e) => {
+    if (!trigKey(e)) return;
+    e.preventDefault();
+    if (!e.repeat) director.press('key');
+  });
+  addEventListener('keyup', (e) => { if (trigKey(e)) { e.preventDefault(); director.lift('key'); } });
+  const dropAll = () => { ptrId = -1; director.liftAll(); };
+  addEventListener('blur', dropAll);
+  document.addEventListener('visibilitychange', () => { if (document.hidden) dropAll(); });
+  canvas.addEventListener('contextmenu', (e) => e.preventDefault());
+
   // quiet HUD tick each time a log line lands
   new MutationObserver(() => audio.blip())
     .observe(document.getElementById('log')!, { childList: true });

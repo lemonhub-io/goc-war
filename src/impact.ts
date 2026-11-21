@@ -2,6 +2,8 @@
 // so the director can seek anywhere in the loop: flash dome, shock ring and
 // dust wall, condensation ring, the mushroom column (analytic toroidal
 // vortex cap + swirling stem), ballistic debris with streak trails, ember fall.
+// U.yieldK (earned by the operator's release timing) sizes the blast: dome,
+// fireball, column, debris throw and flash all scale with it.
 /* eslint-disable @typescript-eslint/no-explicit-any */
 import * as THREE from 'three/webgpu';
 import {
@@ -17,6 +19,8 @@ const age = () => U.time.sub(U.tImpact);
 const ageP = () => max(age(), 0.0);
 const live = () => step(0.0, age());
 const shockR = (a: any) => a.mul(SHOCK_C0).div(a.mul(SHOCK_K).add(1.0));
+/** size scale for volumes that grow with yield — square root, so a big strike reads bigger yet stays in frame */
+const ysz = (): any => field(U.yieldK).sqrt();
 
 function additive(extra: object = {}) {
   return new THREE.MeshBasicNodeMaterial({
@@ -30,7 +34,7 @@ function buildFlashDome(): THREE.Mesh {
   const mat = additive();
   mat.positionNode = Fn(() => {
     const a = ageP();
-    const R = float(62.0).mul(float(1.0).sub(exp(a.mul(-6.5)))).add(0.01);
+    const R = float(62.0).mul(U.yieldK).mul(float(1.0).sub(exp(a.mul(-6.5)))).add(0.01);
     return pl.mul(R);
   })();
   mat.colorNode = Fn(() => {
@@ -57,7 +61,7 @@ function buildShock(): THREE.Group {
   })();
   rm.colorNode = Fn(() => {
     const a = ageP();
-    const e = exp(a.mul(-0.7)).mul(live()).mul(2.2);
+    const e = exp(a.mul(-0.7)).mul(live()).mul(2.2).mul(U.yieldK);
     return vec4(vec3(1.0, 0.82, 0.58).mul(e), 1.0);
   })();
   const ring = new THREE.Mesh(new THREE.RingGeometry(0.965, 1.0, 180).rotateX(-Math.PI / 2), rm);
@@ -117,8 +121,9 @@ function seeds(n: number): Float32Array {
 /** analytic cloud: returns { pos, isCap, hc, yFrac } for a sprite's seed vector */
 function mushroom(S: any) {
   const a = ageP();
-  const hc = float(8.0).add(float(112.0).mul(float(1.0).sub(exp(a.mul(-0.17)))));
-  const rc = float(4.0).add(float(40.0).mul(float(1.0).sub(exp(a.mul(-0.2)))));
+  const ys = ysz();
+  const hc = float(8.0).add(float(112.0).mul(float(1.0).sub(exp(a.mul(-0.17)))).mul(ys));
+  const rc = float(4.0).add(float(40.0).mul(float(1.0).sub(exp(a.mul(-0.2)))).mul(ys));
   const rt = rc.mul(0.55);
   // toroidal cap: tube sections roll — rising in the middle, falling at the rim
   const psi = S.x.mul(TWO_PI).add(a.mul(0.05));
@@ -134,7 +139,7 @@ function mushroom(S: any) {
   const rad = rS.mul(sqrt(S.w));
   const stem = vec3(cos(psiS).mul(rad), yS, sin(psiS).mul(rad));
   // opening fireball
-  const rf = float(46.0).mul(float(1.0).sub(exp(a.mul(-3.0))));
+  const rf = float(46.0).mul(ys).mul(float(1.0).sub(exp(a.mul(-3.0))));
   const dirv = normalize(vec3(hash(S.x.mul(91.7)).mul(2.0).sub(1.0), hash(S.y.mul(53.3)).mul(1.4).sub(0.2), hash(S.z.mul(77.1)).mul(2.0).sub(1.0)).add(0.001));
   const ball = dirv.mul(rf.mul(sqrt(S.w))).add(vec3(0.0, rf.mul(0.7), 0.0));
   const isCap = step(S.z, 0.55);
@@ -210,8 +215,9 @@ function buildDebris(): THREE.Sprite {
   const path = () => {
     const tau = tauF().max(0.0);
     const az = S.x.mul(TWO_PI);
-    const vh = float(10.0).add(pow(S.y, 1.4).mul(66.0));
-    const vy = float(24.0).add(S.z.mul(92.0));
+    const ys = ysz();
+    const vh = float(10.0).add(pow(S.y, 1.4).mul(66.0)).mul(ys);
+    const vy = float(24.0).add(S.z.mul(92.0)).mul(ys);
     const g = 55.0;
     const tg = vy.mul(2.0).div(g);
     const tl = tau.min(tg);
@@ -282,7 +288,7 @@ function buildBlastGlow(): THREE.Sprite {
   mat.colorNode = Fn(() => {
     const r = uv().sub(0.5).length().mul(2.0);
     const a = ageP();
-    const flashE = exp(a.mul(-3.4)).mul(14.0);
+    const flashE = exp(a.mul(-3.4)).mul(14.0).mul(U.yieldK);
     const fireE = U.fire.mul(0.9);
     const e = exp(r.mul(-3.6)).mul(flashE.add(fireE)).mul(live());
     const col = mix(vec3(1.0, 0.45, 0.14), vec3(1.0, 0.95, 0.85), exp(a.mul(-2.2)));

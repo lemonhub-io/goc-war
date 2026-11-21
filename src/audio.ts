@@ -1,5 +1,7 @@
 // audio.ts — synthesized soundscape: rumble bed, capacitor hum, fire crackle,
-// charge riser, rail-gun crack, re-entry roar, impact, klaxon, UI blips. All Web Audio synthesis — no assets.
+// live charge whine, overcharge alarm, rail-gun crack, re-entry roar, impact, klaxon, UI blips.
+// All Web Audio synthesis — no assets. The charge whine is continuous and rides
+// U.charge / U.over, so its pitch sits under the operator's thumb.
 // Layer gains ride the shared scene uniforms, so the mix follows the
 // timeline automatically (charge raises the hum, ground fire grows the crackle).
 import { U } from './shared';
@@ -9,10 +11,18 @@ export interface Synth {
   readonly enabled: boolean;
   toggle(): boolean;
   boom(v: number): void;
-  chargeRiser(): void;
   railgun(): void;
   reentry(): void;
-  impact(): void;
+  /** v = yield multiplier (bigger strike, heavier low end) */
+  impact(v?: number): void;
+  /** overcharge alarm beep — pitch climbs with v (0..1 overcharge) */
+  warn(v: number): void;
+  /** the overcharge needle entered the PERFECT window */
+  sweet(): void;
+  /** perfect release — a bright chord over the launch */
+  perfect(): void;
+  /** the stack vented itself (overload) */
+  vent(): void;
   klaxon(): void;
   blip(): void;
   update(dt: number): void;
@@ -27,6 +37,9 @@ export function createSynth(): Synth {
   let humGain: GainNode | null = null;
   let fireGain: GainNode | null = null;
   let bedGain: GainNode | null = null;
+  let whineGain: GainNode | null = null;
+  let whineLp: BiquadFilterNode | null = null;
+  const whine: [OscillatorNode, number][] = [];
   let crackleAcc = 0;
 
   const noiseBuffer = (seconds: number, decayPow = 1): AudioBuffer => {
@@ -102,6 +115,24 @@ export function createSynth(): Synth {
     hissBp.type = 'bandpass'; hissBp.frequency.value = 2400; hissBp.Q.value = 0.6;
     hiss.connect(hissBp).connect(fireGain).connect(master);
     hiss.start();
+
+    // ---- charge whine: a resonant stack of oscillators whose pitch follows the
+    // capacitor level, then keeps climbing through the overcharge
+    whineGain = ctx.createGain();
+    whineGain.gain.value = 0;
+    whineLp = ctx.createBiquadFilter();
+    whineLp.type = 'lowpass'; whineLp.frequency.value = 400; whineLp.Q.value = 5;
+    for (const [mul, type, gv] of [[1, 'sawtooth', 0.45], [2.004, 'triangle', 0.3], [0.5, 'sine', 0.7]] as const) {
+      const o = ctx.createOscillator();
+      o.type = type;
+      o.frequency.value = 55 * mul;
+      const g = ctx.createGain();
+      g.gain.value = gv;
+      o.connect(g).connect(whineLp);
+      o.start();
+      whine.push([o, mul]);
+    }
+    whineLp.connect(whineGain).connect(master);
   }
 
   function boom(v: number) {
@@ -130,27 +161,56 @@ export function createSynth(): Synth {
     n.start(t0);
   }
 
-  /** capacitor charge — long rising whine under a swelling sub */
-  function chargeRiser() {
+  /** short enveloped tone — the building block of the operator cues */
+  function tone(f: number, type: OscillatorType, gv: number, dur: number, at = 0, f1 = 0) {
+    if (!ctx || !master) return;
+    const t0 = ctx.currentTime + at;
+    const o = ctx.createOscillator();
+    o.type = type;
+    o.frequency.setValueAtTime(f, t0);
+    if (f1 > 0) o.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.0001, t0);
+    g.gain.linearRampToValueAtTime(gv, t0 + 0.008);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+    o.connect(g).connect(master);
+    o.start(t0); o.stop(t0 + dur + 0.02);
+  }
+
+  function warn(v: number) {
+    if (!ctx || !_enabled) return;
+    tone(700 + 560 * v, 'square', 0.03 + 0.02 * v, 0.07);
+  }
+
+  function sweet() {
+    if (!ctx || !_enabled) return;
+    tone(1318.5, 'sine', 0.07, 0.28);
+    tone(1975.5, 'sine', 0.05, 0.34, 0.035);
+  }
+
+  function perfect() {
+    if (!ctx || !_enabled) return;
+    for (const [f, d] of [[1046.5, 0], [1568, 0.03], [2093, 0.06], [3136, 0.09]] as const) {
+      tone(f, 'sine', 0.05, 1.1, d);
+      tone(f * 1.004, 'triangle', 0.018, 0.9, d);
+    }
+  }
+
+  function vent() {
     if (!ctx || !master || !_enabled) return;
     const t0 = ctx.currentTime;
-    const dur = 5.9;
-    for (const [f0, f1, gv, type] of [[48, 520, 0.2, 'sawtooth'], [96, 1400, 0.07, 'triangle'], [210, 3100, 0.025, 'sine']] as const) {
-      const o = ctx.createOscillator();
-      o.type = type;
-      o.frequency.setValueAtTime(f0, t0);
-      o.frequency.exponentialRampToValueAtTime(f1, t0 + dur);
-      const lp = ctx.createBiquadFilter();
-      lp.type = 'lowpass';
-      lp.frequency.setValueAtTime(220, t0);
-      lp.frequency.exponentialRampToValueAtTime(6000, t0 + dur);
-      const g = ctx.createGain();
-      g.gain.setValueAtTime(0.0001, t0);
-      g.gain.exponentialRampToValueAtTime(gv, t0 + dur - 0.2);
-      g.gain.linearRampToValueAtTime(0.0001, t0 + dur + 0.05);
-      o.connect(lp).connect(g).connect(master);
-      o.start(t0); o.stop(t0 + dur + 0.1);
-    }
+    tone(900, 'sawtooth', 0.12, 0.55, 0, 70);
+    const n = ctx.createBufferSource();
+    n.buffer = noiseBuffer(0.9, 1.2);
+    const bp = ctx.createBiquadFilter();
+    bp.type = 'bandpass'; bp.Q.value = 0.9;
+    bp.frequency.setValueAtTime(4000, t0);
+    bp.frequency.exponentialRampToValueAtTime(300, t0 + 0.8);
+    const g = ctx.createGain();
+    g.gain.setValueAtTime(0.35, t0);
+    g.gain.exponentialRampToValueAtTime(0.001, t0 + 0.85);
+    n.connect(bp).connect(g).connect(master);
+    n.start(t0);
   }
 
   /** coil-gun launch — a stuttering crack, then the pulse screaming down the bore */
@@ -200,18 +260,19 @@ export function createSynth(): Synth {
   }
 
   /** ground impact — a shock, a collapse of sub-bass, a long rolling tail */
-  function impact() {
+  function impact(v = 1) {
     if (!ctx || !master || !_enabled) return;
     const t0 = ctx.currentTime;
+    const k = Math.max(0.7, Math.min(1.35, v));
     const sub = ctx.createOscillator();
     sub.type = 'sine';
     sub.frequency.setValueAtTime(70, t0);
     sub.frequency.exponentialRampToValueAtTime(20, t0 + 2.6);
     const sg = ctx.createGain();
-    sg.gain.setValueAtTime(1.0, t0);
-    sg.gain.exponentialRampToValueAtTime(0.001, t0 + 3.2);
+    sg.gain.setValueAtTime(1.0 * k, t0);
+    sg.gain.exponentialRampToValueAtTime(0.001, t0 + 3.2 * k);
     sub.connect(sg).connect(master);
-    sub.start(t0); sub.stop(t0 + 3.3);
+    sub.start(t0); sub.stop(t0 + 3.3 * k);
     const n = ctx.createBufferSource();
     n.buffer = noiseBuffer(1.6, 1.8);
     const lp = ctx.createBiquadFilter();
@@ -225,13 +286,13 @@ export function createSynth(): Synth {
     n.start(t0);
     // rolling rumble tail
     const r = ctx.createBufferSource();
-    r.buffer = noiseBuffer(6, 0.8);
+    r.buffer = noiseBuffer(6 * k, 0.8);
     const rl = ctx.createBiquadFilter();
     rl.type = 'lowpass'; rl.frequency.value = 140;
     const rg = ctx.createGain();
     rg.gain.setValueAtTime(0.0001, t0 + 0.1);
-    rg.gain.linearRampToValueAtTime(0.9, t0 + 0.5);
-    rg.gain.exponentialRampToValueAtTime(0.001, t0 + 6);
+    rg.gain.linearRampToValueAtTime(0.9 * k, t0 + 0.5);
+    rg.gain.exponentialRampToValueAtTime(0.001, t0 + 6 * k);
     r.connect(rl).connect(rg).connect(master);
     r.start(t0 + 0.1);
   }
@@ -310,6 +371,13 @@ export function createSynth(): Synth {
     set(fireGain, U.fire.value * 0.30);
     set(bedGain, 0.5 + U.reentry.value * 0.2 + Math.min(0.6, U.shake.value * 0.45));
 
+    // charge whine: pitch = stack level, climbing on through the overcharge
+    const c = U.charge.value, ov = U.over.value;
+    const f = 55 * Math.pow(2, c * 3.1 + ov * 1.5);
+    for (const [o, mul] of whine) o.frequency.setTargetAtTime(f * mul, t0, 0.04);
+    whineLp?.frequency.setTargetAtTime(260 + f * 3.2, t0, 0.05);
+    whineGain?.gain.setTargetAtTime(c > 0.002 ? 0.03 + 0.09 * c + 0.08 * ov : 0, t0, 0.06);
+
     // crackle density scales with the fire spread
     const inferno = U.fire.value;
     if (inferno > 0.02) {
@@ -330,6 +398,6 @@ export function createSynth(): Synth {
       if (master) master.gain.linearRampToValueAtTime(_enabled ? 0.42 : 0, ctx!.currentTime + 0.4);
       return _enabled;
     },
-    boom, chargeRiser, railgun, reentry, impact, klaxon, blip, update,
+    boom, railgun, reentry, impact, warn, sweet, perfect, vent, klaxon, blip, update,
   };
 }

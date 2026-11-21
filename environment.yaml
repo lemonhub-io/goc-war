@@ -37,6 +37,14 @@ knowledge:
       npm run dev -- --port 5199 &
       CHROME=$HOME/.cache/ms-playwright/chromium-1243/chrome-linux64/chrome \
         URL=http://127.0.0.1:5199/ TIMES=5,14.2,24 OUT=/tmp/shots node shot.mjs
+  - name: operator
+    contents: |
+      The CHARGE phase waits on the viewer: hold pointer/Space to fill the stack,
+      keep holding past 100% and release in the white band for a PERFECT strike
+      (U.yieldK scales the impact FX); holding elsewhere fast-forwards, dragging
+      orbits the camera. Idle viewers get an autopilot after 8 s. ?freeze (stills)
+      and ?auto (kiosk) bypass all of it and run the plain 42 s loop, so shot.mjs
+      captures stay deterministic.
   - name: pwa
     contents: |
       PWA = public/manifest.webmanifest + icons (public/icons/) + dist/sw.js.

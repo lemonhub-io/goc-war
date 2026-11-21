@@ -77,6 +77,14 @@ export const U = {
   tFire: uniform(1e4),
   /** 0..1 platform capacitor charge */
   charge: uniform(0),
+  /** 0..1 overcharge — the operator keeps the trigger held past a full capacitor */
+  over: uniform(0),
+  /** 0..1 red alarm pulse while overcharged (phase driven from the CPU so the beeps line up) */
+  alarm: uniform(0),
+  /** strike yield multiplier earned by the release timing (1 = nominal) */
+  yieldK: uniform(1),
+  /** 1 for the few frames of an impact frame (inverted flash) */
+  invert: uniform(0),
   /** 0..1 target lock on the Earth surface */
   lock: uniform(0),
   /** 0..1 designator laser */

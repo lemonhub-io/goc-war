@@ -17,6 +17,8 @@ export interface PlatformState {
   t: number;
   /** capacitor charge 0..1 */
   charge: number;
+  /** overcharge 0..1 — the operator holding past a full stack */
+  over: number;
   /** seconds since the launch pulse entered the bore (negative before) */
   sinceFire: number;
   /** recoil displacement along the barrel (local +Y) */
@@ -132,8 +134,8 @@ export function buildPlatform(): Platform {
   );
   (bore.material as THREE.MeshBasicNodeMaterial).colorNode = Fn(() => {
     const r = uv().sub(0.5).length().mul(2.0);
-    const e = U.charge.mul(0.9).add(U.muzzle.mul(6.0));
-    return vec4(mix(vec3(0.3, 0.6, 1.0), vec3(1.0, 1.0, 1.0), U.muzzle.min(1.0)).mul(e).mul(smoothstep(1.0, 0.1, r).mul(0.8).add(0.2)), 1.0);
+    const e = U.charge.mul(0.9).add(U.muzzle.mul(6.0)).add(U.over.mul(U.over).mul(3.2));
+    return vec4(mix(vec3(0.3, 0.6, 1.0), vec3(1.0, 1.0, 1.0), U.muzzle.add(U.over.mul(0.8)).min(1.0)).mul(e).mul(smoothstep(1.0, 0.1, r).mul(0.8).add(0.2)), 1.0);
   })();
   add(bore, 0, -28.2, 0);
 
@@ -173,7 +175,8 @@ export function buildPlatform(): Platform {
     const r = hash(AA.w.mul(91.7).add(tq));
     const sinceFire = U.time.sub(U.tFire);
     const burst = exp(sinceFire.mul(-2.2)).mul(step(0.0, sinceFire)).mul(1.2);
-    return step(r, U.charge.mul(0.85).add(burst)).mul(step(0.04, U.charge.add(burst)));
+    // overcharge floods the coils: arcs fire on almost every tick
+    return step(r, U.charge.mul(0.85).add(burst).add(U.over.mul(0.9))).mul(step(0.04, U.charge.add(burst)));
   };
   arcMat.positionNode = Fn(() => {
     const s = bead();
@@ -182,8 +185,8 @@ export function buildPlatform(): Platform {
     const j = vec3(mx_noise_float(vec3(k, tq, 1.3)), mx_noise_float(vec3(k, tq, 7.1)), mx_noise_float(vec3(k, tq, 13.7)));
     return mix(AA.xyz, AB.xyz, s).add(j.mul(sin(s.mul(Math.PI)).mul(AB.w)));
   })();
-  arcMat.scaleNode = Fn(() => { const z = float(0.13).mul(arcAct()); return vec2(z, z); })();
-  arcMat.colorNode = Fn(() => vec4(vec3(0.6, 0.85, 1.0).mul(4.0).mul(arcAct()), arcAct()))();
+  arcMat.scaleNode = Fn(() => { const z = float(0.13).add(U.over.mul(0.09)).mul(arcAct()); return vec2(z, z); })();
+  arcMat.colorNode = Fn(() => vec4(mix(vec3(0.6, 0.85, 1.0), vec3(1.0, 0.92, 0.88), U.over).mul(4.0).mul(arcAct()), arcAct()))();
   const arcs = new THREE.Sprite(arcMat);
   arcs.count = ARCS * BEADS; arcs.frustumCulled = false; arcs.renderOrder = 20;
   body.add(arcs);
@@ -242,10 +245,17 @@ export function buildPlatform(): Platform {
   }
   const NAV_COL = [new THREE.Color(1, 0.1, 0.05), new THREE.Color(0.1, 1, 0.3), new THREE.Color(1, 1, 1), new THREE.Color(1, 0.4, 0.1)];
   const tmp = new THREE.Color();
+  const AFTER_C = new THREE.Color(1.0, 0.55, 0.25);
+  const STRAIN_W = new THREE.Color(1.0, 0.95, 0.9);
+  const STRAIN_R = new THREE.Color(1.0, 0.22, 0.12);
 
   const update = (s: PlatformState) => {
-    body.position.y = s.recoil;
     const tt = s.t;
+    const ov = s.over;
+    body.position.y = s.recoil;
+    // the hull shudders under an overcharged stack
+    body.position.x = Math.sin(tt * 71) * 0.1 * ov * ov;
+    body.position.z = Math.sin(tt * 57 + 1.3) * 0.08 * ov * ov;
 
     // capacitor rings: fill top→bottom with charge, shimmer, then carry the launch pulse down the bore
     const sweep = s.sinceFire > 0 ? (s.sinceFire / 0.32) * (N_RINGS + 2) : -9;
@@ -256,14 +266,20 @@ export function buildPlatform(): Platform {
       let I = on * shimmer * (0.9 + s.charge * 1.6);
       I += Math.exp(-Math.pow(i - sweep, 2) / 1.3) * 7.0 * (s.sinceFire > 0 && s.sinceFire < 0.8 ? 1 : 0);
       I += afterglow * 0.7 * (i / N_RINGS);
-      tmp.setRGB(0.45, 0.8, 1.0).lerp(new THREE.Color(1.0, 0.55, 0.25), afterglow * 0.7).multiplyScalar(I);
+      tmp.setRGB(0.45, 0.8, 1.0).lerp(AFTER_C, afterglow * 0.7);
+      if (ov > 0) {
+        // overcharge: the stack runs white-hot, then flickers red toward the vent
+        I *= 1 + ov * 1.7 * (0.7 + 0.3 * Math.sin(tt * (30 + ov * 50) + i * 2.3));
+        tmp.lerp(STRAIN_W, Math.min(1, ov * 1.3) * 0.75).lerp(STRAIN_R, THREE.MathUtils.smoothstep(ov, 0.7, 1) * 0.85);
+      }
+      tmp.multiplyScalar(I);
       glow.setColorAt(i, tmp);
     }
     if (glow.instanceColor) glow.instanceColor.needsUpdate = true;
 
     for (let i = 0; i < 6; i++) {
       const kind = navPos[i][3];
-      const blink = kind === 2 ? (Math.sin(tt * 3.0 + i) > 0.6 ? 1 : 0.05) : kind === 3 ? (0.4 + s.charge * 1.6) : (Math.sin(tt * 1.7 + i) > 0 ? 1.0 : 0.2);
+      const blink = kind === 2 ? (Math.sin(tt * 3.0 + i) > 0.6 ? 1 : 0.05) : kind === 3 ? (0.4 + s.charge * 1.6 + ov * 2) : (Math.sin(tt * 1.7 + i) > 0 ? 1.0 : 0.2);
       nav.setColorAt(i, tmp.copy(NAV_COL[kind]).multiplyScalar(blink * 2.5));
     }
     if (nav.instanceColor) nav.instanceColor.needsUpdate = true;

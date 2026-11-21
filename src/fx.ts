@@ -1,5 +1,6 @@
 // fx.ts — post chain: shockwave refraction, sun/fireball rays, HDR bloom,
-// impact-driven chromatic aberration, vignette, film grain, scanline weave.
+// impact-driven chromatic aberration, vignette, film grain, scanline weave,
+// the overcharge alarm (red edge pulse) and the inverted impact frame.
 // `lite` tier: weaker bloom, no chromatic aberration — roughly halves the
 // per-pixel post cost on weak GPUs while keeping the signature glow.
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -66,9 +67,15 @@ export function buildPost(renderer: THREE.WebGPURenderer, scene: THREE.Scene, ca
     // muzzle / impact flash
     const flash = U.flash.mul(vec3(0.85, 0.9, 1.0)).mul(0.55);
 
+    // overcharge alarm: the frame edge pulses red in step with the warning beeps
+    const alarm = vec3(1.0, 0.1, 0.04).mul(smoothstep(0.2, 0.75, r).mul(U.alarm).mul(0.55));
+
     // grade: scorched warmth while ground zero burns
     const graded = mix(c.rgb, c.rgb.mul(vec3(1.1, 0.97, 0.86)), U.fire.mul(0.55));
-    const out = graded.mul(vig.mul(U.exposure)).add(grain).add(scan).add(flash);
+    const lit: any = graded.mul(vig.mul(U.exposure)).add(grain).add(scan).add(flash).add(alarm);
+    // impact frame: a few frames of cold negative on the hit
+    const neg = vec3(1.0, 1.0, 1.0).sub(lit.clamp(0.0, 1.0)).mul(vec3(0.82, 0.9, 1.0));
+    const out = mix(lit, neg, U.invert);
     return vec4(out, 1.0);
   })();
 
